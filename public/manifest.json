@@ -1,9 +1,0 @@
-{
-  "name": "DukaPulse Pro Hardware Offline",
-  "short_name": "DukaPulse",
-  "start_url": "/",
-  "display": "standalone",
-  "background_color": "#0f2e2a",
-  "theme_color": "#0f2e2a",
-  "icons": [{"src": "/icon.png","sizes": "512x512","type": "image/png"}]
-}
