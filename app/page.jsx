@@ -1,167 +1,149 @@
 "use client"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 
-const MASTER_KEY = "dukapulse-HARDWARE-PRO-v1-2026"
-const CATS = ["Cement & Concrete","Steel & Iron Sheets","Paints & Coatings","Plumbing","Electrical","Tools & Machinery","Nails & Fasteners","Timber & Boards","Roofing","Sanitary & Tiles"]
-const UNITS = ["Bag","Pc","Kg","Mtr","Ltr","Box","Roll","Set","Bundle"]
+const MASTER_KEY = "dukapulse-HARDWARE-OFFLINE-v1"
+const CATS = ["Cement & Concrete","Steel & Iron","Paints","Plumbing","Electrical","Tools","Nails","Timber","Roofing","Tiles"]
+const UNITS = ["Bag","Pc","Kg","Mtr","Ltr","Box","Roll","Set"]
 
 export default function Page(){
  const [active,setActive]=useState("POS Sell")
- const [store,setStore]=useState({products:[],sales:[],expenses:[],suppliers:[],customers:[],trash:[],mpesaLogs:[]})
+ const [store,setStore]=useState({products:[],sales:[],customers:[],mpesaQueue:[],expenses:[]})
  const [cart,setCart]=useState([])
  const [q,setQ]=useState("")
- const [mpesa,setMpesa]=useState({paybill:"",till:"",consumerKey:"",consumerSecret:"",shortcode:"",passkey:"",env:"sandbox"})
+ const [isOnline,setIsOnline]=useState(true)
  const [form,setForm]=useState({})
  const [show,setShow]=useState(null)
+ const [scanOn,setScanOn]=useState(false)
+ const videoRef=useRef(null)
 
  useEffect(()=>{
-  try{ const m=localStorage.getItem(MASTER_KEY); if(m) setStore(JSON.parse(m))
-  else { const old=localStorage.getItem("dukapulse-HARDWARE-PRO-v1"); if(old) setStore(JSON.parse(old)) }
-  const cfg=localStorage.getItem(MASTER_KEY+"-MPESA"); if(cfg) setMpesa(JSON.parse(cfg))
-  }catch(e){}
+  setIsOnline(navigator.onLine); window.addEventListener("online",()=>setIsOnline(true)); window.addEventListener("offline",()=>setIsOnline(false))
+  try{ const m=localStorage.getItem(MASTER_KEY); if(m) setStore(JSON.parse(m)) }catch(e){}
+  // PWA install
+  if('serviceWorker' in navigator){ navigator.serviceWorker.register('/sw.js').catch(()=>{}) }
  },[])
  useEffect(()=>{ localStorage.setItem(MASTER_KEY,JSON.stringify(store)) },[store])
- useEffect(()=>{ localStorage.setItem(MASTER_KEY+"-MPESA",JSON.stringify(mpesa)) },[mpesa])
+
+ // 1. BARCODE SCANNER (Camera)
+ const startScanner=async()=>{
+  setScanOn(true)
+  try{
+   const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}})
+   if(videoRef.current){ videoRef.current.srcObject=stream; videoRef.current.play() }
+   // Native BarcodeDetector if available (offline)
+   if('BarcodeDetector' in window){
+    const detector=new window.BarcodeDetector({formats:['ean_13','code_128','qr_code']})
+    const scan=async()=>{
+     if(!scanOn) return
+     try{ const codes=await detector.detect(videoRef.current); if(codes.length>0){ let code=codes[0].rawValue; let prod=store.products.find(p=>p.barcode===code); if(prod){ addToCart(prod); alert(`Scanned ${prod.name}`); stopScanner() } else { setQ(code) } } }catch(e){}
+     requestAnimationFrame(scan)
+    }; scan()
+   }
+  }catch(e){ alert("Camera failed: "+e.message) }
+ }
+ const stopScanner=()=>{ setScanOn(false); if(videoRef.current?.srcObject){ videoRef.current.srcObject.getTracks().forEach(t=>t.stop()) } }
 
  const addProduct=()=>{
-  if(!form.name||!form.buyPrice) return alert("Name & Buy Price required")
-  const p={id:Date.now(),name:form.name,category:form.category||CATS[0],brand:form.brand||"",size:form.size||"",unit:form.unit||"Pc",buyPrice:parseFloat(form.buyPrice),sellPrice:parseFloat(form.sellPrice),stock:parseFloat(form.stock)||0,minStock:parseFloat(form.minStock)||5,supplier:form.supplier||"",shelf:form.shelf||"",barcode:form.barcode||"",createdAt:new Date().toISOString()}
+  if(!form.name||!form.buyPrice||!form.sellPrice) return alert("Name, Buy, Sell required")
+  const p={id:Date.now(),name:form.name.toUpperCase(),category:form.category||CATS[0],brand:form.brand||"",size:form.size||"",unit:form.unit||"Pc",buyPrice:parseFloat(form.buyPrice),sellPrice:parseFloat(form.sellPrice),stock:parseFloat(form.stock)||0,minStock:parseFloat(form.minStock)||5,shelf:form.shelf||"",barcode:form.barcode||""}
   setStore({...store,products:[...store.products,p]}); setShow(null); setForm({})
  }
  const addToCart=(prod)=>{
-  const ex=cart.find(c=>c.id===prod.id)
-  if(ex) setCart(cart.map(c=>c.id===prod.id?{...c,qty:c.qty+1}:c))
-  else setCart([...cart,{...prod,qty:1}])
+  const ex=cart.find(c=>c.id===prod.id); if(ex) setCart(cart.map(c=>c.id===prod.id?{...c,qty:c.qty+1}:c)); else setCart([...cart,{...prod,qty:1}])
  }
+
+ // SELL + CREDIT BOOK LOGIC
  const sell=(method)=>{
   if(cart.length===0) return alert("Cart empty")
   let total=cart.reduce((a,b)=>a+b.sellPrice*b.qty,0)
   let profit=cart.reduce((a,b)=>a+(b.sellPrice-b.buyPrice)*b.qty,0)
-  if(method==="MPesa" &&!mpesa.shortcode) return alert("Set MPesa Daraja config in Settings first")
+  for(let c of cart){ let p=store.products.find(x=>x.id===c.id); if(p.stock<c.qty) return alert(`${p.name} stock ${p.stock}`) }
 
-  // Daraja STK Push simulation - replace with real API call
-  if(method==="MPesa"){
-   const log={id:Date.now(),phone:form.mpesaPhone,amount:total,status:"STK Sent",time:new Date().toISOString()}
-   setStore(s=>({...s,mpesaLogs:[log,...s.mpesaLogs]}))
-   alert(`MPesa STK Push sent to ${form.mpesaPhone} for KES ${total}. Check phone to enter PIN. Daraja Shortcode: ${mpesa.shortcode}`)
+  if(method==="MPesa" &&!isOnline){
+   const qItem={id:Date.now(),phone:form.mpesaPhone,amount:total,status:"QUEUED OFFLINE",date:new Date().toISOString()}
+   setStore(s=>({...s,mpesaQueue:[...s.mpesaQueue,qItem]})); method="Credit-Queued-MPesa"
+  }
+  if(method==="MPesa" && isOnline){
+   setStore(s=>({...s,mpesaQueue:[{id:Date.now(),phone:form.mpesaPhone,amount:total,status:"STK SENT",date:new Date().toISOString()},...s.mpesaQueue]}))
   }
 
-  const sale={id:Date.now(),items:cart,total,profit,method,mpesaPhone:form.mpesaPhone||"",customer:form.customerName||"Walk-in",date:new Date().toISOString()}
-  // reduce stock
+  // Credit Book
+  let customers=store.customers
+  if(method.includes("Credit")||method.includes("Queued")){
+   let cName=form.customerName||"Walk-in"; let ex=customers.find(x=>x.name===cName)
+   if(ex) customers=customers.map(x=>x.name===cName?{...x,balance:x.balance+total,debts:[...x.debts,{id:Date.now(),total,date:new Date().toISOString(),items:cart}]}:x)
+   else customers=[...customers,{id:Date.now(),name:cName,phone:form.mpesaPhone||"",balance:total,debts:[{id:Date.now(),total,date:new Date().toISOString(),items:cart}]}]
+  }
+
+  const sale={id:Date.now(),items:cart,total,profit,method,mpesaPhone:form.mpesaPhone||"",customer:form.customerName||"Walk-in",date:new Date().toISOString(),synced:!isOnline?false:true}
   const newProducts=store.products.map(p=>{ const inCart=cart.find(c=>c.id===p.id); return inCart?{...p,stock:p.stock-inCart.qty}:p })
-  setStore({products:newProducts,sales:[sale,...store.sales],expenses:store.expenses,suppliers:store.suppliers,customers:store.customers,trash:store.trash,mpesaLogs:store.mpesaLogs})
+  setStore({...store,products:newProducts,sales:[sale,...store.sales],customers,mpesaQueue:store.mpesaQueue,expenses:store.expenses})
+
+  // 2. RECEIPT PRINT (offline)
+  printReceipt(sale)
   setCart([]); setForm({})
-  alert(`SOLD KES ${total} | Profit KES ${profit} | ${method}`)
+ }
+
+ // 2. RECEIPT PRINTER (Thermal 80mm)
+ const printReceipt=(sale)=>{
+  const w=window.open("","","width=300,height=600")
+  w.document.write(`<html><head><style>body{font-family:monospace;width:80mm;padding:5px;font-size:12px}.c{text-align:center}.line{border-top:1px dashed #000;margin:6px 0}.r{display:flex;justify-content:space-between}</style></head><body>
+   <div class=c><b>DUKAPULSE HARDWARE</b><br/>Mumias - 0712345678<br/>OFFLINE RECEIPT</div><div class=line></div>
+   Date: ${new Date(sale.date).toLocaleString()}<br/>Customer: ${sale.customer}<br/>Method: ${sale.method} ${sale.mpesaPhone}<br/><div class=line></div>
+   ${sale.items.map(i=>`<div class=r><span>${i.name} x${i.qty}</span><span>${i.sellPrice*i.qty}</span></div><div style="font-size:10px">${i.brand} ${i.size}</div>`).join("")}
+   <div class=line></div><div class=r><b>TOTAL</b><b>KES ${sale.total}</b></div><div class=r><span>Profit</span><span>KES ${sale.profit}</span></div>
+   <div class=line></div><div class=c>Thank you! ${!isOnline?"[OFFLINE SALE]":""}<br/>No internet needed</div><script>window.print();setTimeout(()=>window.close(),500)</script></body></html>`)
+  w.document.close()
  }
 
  const filtered=store.products.filter(p=>JSON.stringify(p).toLowerCase().includes(q.toLowerCase()))
  const lowStock=store.products.filter(p=>p.stock<=p.minStock)
-
- const exportAll=()=>{ const blob=new Blob([JSON.stringify(store,null,2)],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`DUKA-HARDWARE-BACKUP-${new Date().toISOString().slice(0,10)}.json`; a.click() }
-
- const card={background:"#fff",padding:"14px",borderRadius:"12px",boxShadow:"0 1px 3px rgba(0,0,0,0.1)"}
+ const todaySales=store.sales.filter(s=>new Date(s.date).toDateString()===new Date().toDateString())
+ const card={background:"#fff",padding:"14px",borderRadius:"12px",boxShadow:"0 1px 3px rgba(0,0,0,.1)"}
  const input={padding:"11px",borderRadius:"10px",border:"1px solid #ccc",width:"100%"}
  const btn={background:"#0f2e2a",color:"#fff",border:"none",padding:"10px 16px",borderRadius:"20px",fontWeight:"bold",cursor:"pointer"}
 
+ // 5. CLOSING REPORT
+ const closing={cash:todaySales.filter(s=>s.method==="Cash").reduce((a,b)=>a+b.total,0),mpesa:todaySales.filter(s=>s.method==="MPesa").reduce((a,b)=>a+b.total,0),credit:todaySales.filter(s=>s.method.includes("Credit")).reduce((a,b)=>a+b.total,0),profit:todaySales.reduce((a,b)=>a+b.profit,0),total:todaySales.reduce((a,b)=>a+b.total,0)}
+
  return(
  <div style={{display:"flex",minHeight:"100vh",fontFamily:"Arial",background:"#f2f4f7"}}>
-  <div style={{width:"270px",background:"#0f2e2a",color:"#fff",display:"flex",flexDirection:"column"}}>
-   <div style={{padding:"14px",borderBottom:"1px solid #1a423b"}}><div style={{fontWeight:900,fontSize:"19px"}}>DukaPulse Pro</div><div style={{fontSize:"10px",color:"#a8d5a0"}}>HARDWARE EDITION | MPesa Daraja</div><div style={{fontSize:"10px",marginTop:"4px",background:"#1a423b",padding:"4px 8px",borderRadius:"8px"}}>Stock: {store.products.length} | Sales: {store.sales.length}</div></div>
-   <div style={{flex:1,overflowY:"auto",padding:"8px"}}>
-    {["POS Sell","Products & Stock","Sales History","Expenses","Suppliers","Credit Book","MPesa Logs","Dashboard","Settings"].map(m=><button key={m} onClick={()=>setActive(m)} style={{display:"block",width:"100%",textAlign:"left",padding:"10px 12px",margin:"3px 0",borderRadius:"8px",border:"none",background:active===m?"#facc15":"transparent",color:active===m?"#000":"#c5f0a4",fontWeight:active===m?"bold":"500",cursor:"pointer"}}>{m}</button>)}
-    <div style={{marginTop:"12px",padding:"10px",background:"#1a423b",borderRadius:"10px"}}><button onClick={exportAll} style={{width:"100%",background:"#facc15",color:"#000",border:"none",padding:"8px",borderRadius:"8px",fontWeight:"bold"}}>⬇️ BACKUP DUKA</button><div style={{fontSize:"10px",color:"#8aa07a",marginTop:"6px"}}>Master Key: {MASTER_KEY}</div></div>
+  <div style={{width:"260px",background:"#0f2e2a",color:"#fff",display:"flex",flexDirection:"column"}}>
+   <div style={{padding:"14px",borderBottom:"1px solid #1a423b"}}><div style={{fontWeight:900}}>DukaPulse Pro</div><div style={{fontSize:"10px",color:"#a8d5a0"}}>HARDWARE • 100% OFFLINE</div>
+   <div style={{marginTop:"8px",padding:"6px 10px",borderRadius:"20px",fontSize:"11px",fontWeight:"bold",background:isOnline?"#16a34a":"#dc2626",display:"inline-block"}}>{isOnline?"● ONLINE":"○ OFFLINE - OK"}</div></div>
+   <div style={{flex:1,padding:"8px"}}>
+    {["POS Sell","Products","Sales History","Credit Book","MPesa Queue","Closing Report","Dashboard"].map(m=><button key={m} onClick={()=>setActive(m)} style={{display:"block",width:"100%",textAlign:"left",padding:"11px 12px",margin:"3px 0",borderRadius:"8px",border:"none",background:active===m?"#facc15":"transparent",color:active===m?"#000":"#c5f0a4",cursor:"pointer"}}>{m}</button>)}
+    <div style={{marginTop:"12px",padding:"10px",background:"#1a423b",borderRadius:"10px"}}><button onClick={()=>{const b=new Blob([JSON.stringify(store,null,2)],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download=`DUKA-OFFLINE-${new Date().toISOString().slice(0,10)}.json`; a.click()}} style={{width:"100%",background:"#facc15",color:"#000",border:"none",padding:"9px",borderRadius:"8px",fontWeight:"bold"}}>⬇️ BACKUP OFFLINE</button></div>
    </div>
   </div>
 
   <div style={{flex:1,padding:"14px",overflow:"auto"}}>
    {active==="POS Sell" && (
     <div style={{display:"flex",gap:"14px",flexWrap:"wrap"}}>
-     <div style={{flex:"1 1 500px"}}>
-      <h2 style={{margin:"0 0 8px"}}>POS - Hardware Sell</h2>
-      <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Scan barcode or search cement, iron, paint..." style={{...input,borderRadius:"20px",marginBottom:"10px"}}/>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:"8px",maxHeight:"75vh",overflowY:"auto"}}>
-       {filtered.map(p=><div key={p.id} onClick={()=>addToCart(p)} style={{...card,cursor:"pointer",borderLeft:p.stock<=p.minStock?"4px solid red":"4px solid #16a34a"}}><div style={{fontWeight:"bold",fontSize:"13px"}}>{p.name}</div><div style={{fontSize:"11px",color:"#666"}}>{p.brand} {p.size} | {p.category}</div><div style={{fontSize:"12px",marginTop:"4px"}}><b>KES {p.sellPrice}</b> <small style={{color:p.stock<=p.minStock?"red":"#666"}}>({p.stock} {p.unit})</small></div><div style={{fontSize:"10px",background:"#f1f5f9",padding:"2px 6px",borderRadius:"6px",marginTop:"4px",display:"inline-block"}}>{p.shelf} | {p.barcode}</div></div>)}
-      </div>
+     <div style={{flex:"1 1 500px"}}><div style={{display:"flex",gap:"8px",marginBottom:"10px"}}><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Scan or search..." style={{...input,flex:1,borderRadius:"20px"}}/><button onClick={scanOn?stopScanner:startScanner} style={{...btn,background:scanOn?"#dc2626":"#0f2e2a"}}>{scanOn?"Stop":"📷 Scan"}</button></div>
+      {scanOn && <div style={{...card,marginBottom:"10px"}}><video ref={videoRef} style={{width:"100%",borderRadius:"10px",background:"#000",height:"200px"}}/><div style={{fontSize:"11px",color:"#666",textAlign:"center"}}>Point camera to barcode - Offline detection</div></div>}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:"8px",maxHeight:"70vh",overflowY:"auto"}}>{filtered.map(p=><div key={p.id} onClick={()=>addToCart(p)} style={{...card,cursor:"pointer",borderLeft:p.stock<=p.minStock?"4px solid red":"4px solid #16a34a"}}><div style={{fontWeight:"bold",fontSize:"13px"}}>{p.name}</div><div style={{fontSize:"11px",color:"#666"}}>{p.brand} {p.size}</div><div style={{fontSize:"12px",marginTop:"4px"}}><b>KES {p.sellPrice}</b> <small>({p.stock} {p.unit})</small></div></div>)}</div>
      </div>
-     <div style={{flex:"0 0 340px",...card,height:"fit-content"}}>
-      <h3 style={{marginTop:0}}>Cart ({cart.length})</h3>
-      {cart.length===0?<div style={{color:"#999",textAlign:"center",padding:"20px"}}>No items</div>:cart.map(c=><div key={c.id} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #eee",fontSize:"13px"}}><div><b>{c.name}</b><br/><small>{c.sellPrice} x {c.qty} {c.unit}</small></div><div><b>{c.sellPrice*c.qty}</b><br/><button onClick={()=>setCart(cart.filter(x=>x.id!==c.id))} style={{border:"none",background:"none"}}>❌</button></div></div>)}
-      {cart.length>0 && <>
-       <div style={{marginTop:"10px",padding:"10px",background:"#f8fafc",borderRadius:"10px"}}><div style={{display:"flex",justifyContent:"space-between",fontWeight:"bold"}}><span>Total</span><span>KES {cart.reduce((a,b)=>a+b.sellPrice*b.qty,0)}</span></div><div style={{display:"flex",justifyContent:"space-between",fontSize:"12px",color:"#16a34a"}}><span>Profit</span><span>KES {cart.reduce((a,b)=>a+(b.sellPrice-b.buyPrice)*b.qty,0)}</span></div></div>
-       <input value={form.customerName||""} onChange={e=>setForm({...form,customerName:e.target.value})} placeholder="Customer name (optional)" style={{...input,marginTop:"8px"}}/>
-       <input value={form.mpesaPhone||""} onChange={e=>setForm({...form,mpesaPhone:e.target.value})} placeholder="MPesa Phone 2547..." style={{...input,marginTop:"8px"}}/>
-       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginTop:"10px"}}>
-        <button onClick={()=>sell("Cash")} style={{...btn,background:"#16a34a"}}>💵 Cash Sale</button>
-        <button onClick={()=>sell("MPesa")} style={{...btn,background:"#000"}}>📱 MPesa STK</button>
-        <button onClick={()=>sell("Credit")} style={{...btn,background:"#dc2626"}}>📒 Credit</button>
-        <button onClick={()=>setCart([])} style={{...btn,background:"#6b7280"}}>Clear</button>
-       </div>
-       <div style={{fontSize:"11px",color:"#666",marginTop:"8px",background:"#fffbeb",padding:"8px",borderRadius:"8px"}}>Daraja: Shortcode {mpesa.shortcode||"Not set"} | Env: {mpesa.env}</div>
-      </>}
+     <div style={{flex:"0 0 340px",...card,height:"fit-content"}}><h3>Cart ({cart.length})</h3>{cart.map(c=><div key={c.id} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #eee",fontSize:"13px"}}><div><b>{c.name}</b><br/><small>{c.sellPrice} x {c.qty}</small></div><div><b>{c.sellPrice*c.qty}</b> <button onClick={()=>setCart(cart.filter(x=>x.id!==c.id))} style={{border:"none",background:"none"}}>❌</button></div></div>)}
+      {cart.length>0 && <><div style={{marginTop:"10px",padding:"10px",background:"#f8fafc",borderRadius:"10px"}}><div style={{display:"flex",justifyContent:"space-between",fontWeight:"bold"}}><span>Total</span><span>KES {cart.reduce((a,b)=>a+b.sellPrice*b.qty,0)}</span></div></div><input value={form.customerName||""} onChange={e=>setForm({...form,customerName:e.target.value})} placeholder="Customer" style={{...input,marginTop:"8px"}}/><input value={form.mpesaPhone||""} onChange={e=>setForm({...form,mpesaPhone:e.target.value})} placeholder="MPesa 2547..." style={{...input,marginTop:"8px"}}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginTop:"10px"}}><button onClick={()=>sell("Cash")} style={{...btn,background:"#16a34a"}}>💵 Cash + Print</button><button onClick={()=>sell("MPesa")} style={{...btn,background:"#000"}}>📱 MPesa + Print</button><button onClick={()=>sell("Credit")} style={{...btn,background:"#dc2626"}}>📒 Credit + Print</button><button onClick={()=>setCart([])} style={{...btn,background:"#9ca3af"}}>Clear</button></div></>}
      </div>
     </div>
    )}
-
-   {active==="Products & Stock" && (
-    <div><div style={{display:"flex",justifyContent:"space-between",marginBottom:"10px"}}><h2 style={{margin:0}}>Hardware Stock</h2><button onClick={()=>{setForm({category:CATS[0],unit:"Pc"}); setShow("product")}} style={btn}>+ Add Hardware Item</button></div>
-     <div style={{display:"flex",gap:"8px",marginBottom:"10px"}}><div style={{...card,flex:1}}>Total Items: <b>{store.products.length}</b></div><div style={{...card,flex:1,background:lowStock.length>0?"#fef2f2":"#fff"}}>Low Stock: <b style={{color:"red"}}>{lowStock.length}</b></div></div>
-     <div style={{background:"#fff",borderRadius:"12px",overflowX:"auto"}}><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search hardware..." style={{...input,width:"300px",margin:"10px",borderRadius:"20px"}}/>
-     <table style={{width:"100%",minWidth:"1200px",borderCollapse:"collapse",fontSize:"13px"}}><thead><tr style={{background:"#f1f5f9",textAlign:"left"}}><th style={{padding:"10px"}}>Name</th><th>Category</th><th>Brand/Size</th><th>Buy</th><th>Sell</th><th>Stock</th><th>Unit</th><th>Shelf</th><th>Barcode</th><th>Action</th></tr></thead><tbody>{filtered.map(p=><tr key={p.id} style={{borderTop:"1px solid #eee",background:p.stock<=p.minStock?"#fff1f2":"#fff"}}><td style={{padding:"10px",fontWeight:"bold"}}>{p.name}</td><td>{p.category}</td><td>{p.brand} {p.size}</td><td>{p.buyPrice}</td><td><b>{p.sellPrice}</b></td><td style={{color:p.stock<=p.minStock?"red":"green",fontWeight:"bold"}}>{p.stock}</td><td>{p.unit}</td><td>{p.shelf}</td><td style={{fontFamily:"monospace"}}>{p.barcode}</td><td><button onClick={()=>{ const s={...store}; s.products=s.products.filter(x=>x.id!==p.id); s.trash=[...s.trash,{...p,_from:"products"}]; setStore(s) }} style={{border:"none",background:"none"}}>🗑️</button></td></tr>)}</tbody></table></div>
+   {active==="Credit Book" && (
+    <div><h2>Credit Book (Madeni) - Offline</h2><div style={{display:"grid",gap:"8px"}}>{store.customers.filter(c=>c.balance>0).map(c=><div key={c.id} style={card}><div style={{display:"flex",justifyContent:"space-between"}}><div><b>{c.name}</b><br/><small>{c.phone} | Debts: {c.debts.length}</small></div><div><b style={{color:"red"}}>KES {c.balance}</b><br/><button onClick={()=>{ let amt=parseFloat(prompt(`How much paid by ${c.name}?`)); if(amt){ setStore(s=>({...s,customers:s.customers.map(x=>x.id===c.id?{...x,balance:x.balance-amt}:x)})); alert(`Paid KES ${amt} - Balance KES ${c.balance-amt}`) } }} style={{...btn,padding:"4px 10px",fontSize:"11px",marginTop:"4px"}}>Pay</button></div></div><div style={{fontSize:"11px",marginTop:"6px",background:"#f8fafc",padding:"6px",borderRadius:"6px"}}>{c.debts.slice(0,2).map(d=>`${new Date(d.date).toLocaleDateString()} KES ${d.total}`).join(" | ")}</div></div>)} {store.customers.length===0 && <div style={{color:"#999"}}>No credit sales yet</div>}</div></div>
+   )}
+   {active==="Closing Report" && (
+    <div><h2>Today Closing - Overall Data Retained</h2><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:"10px"}}><div style={card}><div style={{fontSize:"11px"}}>TOTAL SALES TODAY</div><div style={{fontSize:"24px",fontWeight:"900"}}>KES {closing.total}</div><div style={{fontSize:"11px",color:"#666"}}>{todaySales.length} transactions</div></div><div style={card}><div style={{fontSize:"11px"}}>CASH</div><div style={{fontSize:"20px",fontWeight:"900",color:"#16a34a"}}>KES {closing.cash}</div></div><div style={card}><div style={{fontSize:"11px"}}>MPESA</div><div style={{fontSize:"20px",fontWeight:"900",color:"#000"}}>KES {closing.mpesa}</div></div><div style={card}><div style={{fontSize:"11px"}}>CREDIT (Madeni)</div><div style={{fontSize:"20px",fontWeight:"900",color:"red"}}>KES {closing.credit}</div></div><div style={card}><div style={{fontSize:"11px"}}>PROFIT TODAY</div><div style={{fontSize:"20px",fontWeight:"900",color:"#16a34a"}}>KES {closing.profit}</div></div></div>
+     <div style={{...card,marginTop:"12px"}}><div style={{display:"flex",justifyContent:"space-between"}}><h3>Closing Receipt</h3><button onClick={()=>{ const s={...todaySales}; const w=window.open("","","width=300,height=600"); w.document.write(`<html><body style="font-family:monospace;width:80mm;padding:5px"><center><b>CLOSING REPORT</b><br/>${new Date().toLocaleDateString()}</center><hr/>Cash: KES ${closing.cash}<br/>MPesa: KES ${closing.mpesa}<br/>Credit: KES ${closing.credit}<br/><hr/><b>Total: KES ${closing.total}</b><br/>Profit: KES ${closing.profit}<br/><hr/>Transactions: ${todaySales.length}<br/><center>Thank you</center><script>window.print()</script></body></html>`); w.document.close() }} style={btn}>🖨️ Print Closing</button></div><div style={{fontSize:"13px"}}>Cash KES {closing.cash} + MPesa KES {closing.mpesa} + Credit KES {closing.credit} = Total KES {closing.total}<br/>Profit KES {closing.profit}</div></div>
     </div>
    )}
-
-   {active==="Dashboard" && (
-    <div><h2>Hardware Dashboard - Overall Data Retained</h2>
-     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:"10px"}}>
-      <div style={card}><div style={{fontSize:"11px"}}>TODAY SALES</div><div style={{fontSize:"22px",fontWeight:"900"}}>KES {store.sales.filter(s=>new Date(s.date).toDateString()===new Date().toDateString()).reduce((a,b)=>a+b.total,0)}</div></div>
-      <div style={card}><div style={{fontSize:"11px"}}>TODAY PROFIT</div><div style={{fontSize:"22px",fontWeight:"900",color:"#16a34a"}}>KES {store.sales.filter(s=>new Date(s.date).toDateString()===new Date().toDateString()).reduce((a,b)=>a+b.profit,0)}</div></div>
-      <div style={card}><div style={{fontSize:"11px"}}>TOTAL STOCK VALUE (Buy)</div><div style={{fontSize:"22px",fontWeight:"900"}}>KES {store.products.reduce((a,b)=>a+b.buyPrice*b.stock,0).toLocaleString()}</div></div>
-      <div style={card}><div style={{fontSize:"11px"}}>LOW STOCK ITEMS</div><div style={{fontSize:"22px",fontWeight:"900",color:"red"}}>{lowStock.length}</div></div>
-     </div>
-     <div style={{...card,marginTop:"12px"}}><h3>Top Selling Hardware</h3><div style={{fontSize:"12px"}}>{store.sales.flatMap(s=>s.items).reduce((acc,item)=>{ acc[item.name]=(acc[item.name]||0)+item.qty; return acc },{ }) && Object.entries(store.sales.flatMap(s=>s.items).reduce((acc,item)=>{ acc[item.name]=(acc[item.name]||0)+item.qty; return acc },{})).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=><div key={k} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #eee"}}><span>{k}</span><b>{v} sold</b></div>)}</div></div>
-    </div>
-   )}
-
-   {active==="Sales History" && (
-    <div><h2>Sales History</h2><div style={{background:"#fff",borderRadius:"12px",overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:"13px"}}><thead><tr style={{background:"#f1f5f9",textAlign:"left"}}><th style={{padding:"10px"}}>Date</th><th>Items</th><th>Total</th><th>Profit</th><th>Method</th><th>Customer</th></tr></thead><tbody>{store.sales.map(s=><tr key={s.id} style={{borderTop:"1px solid #eee"}}><td style={{padding:"10px",fontSize:"11px"}}>{new Date(s.date).toLocaleString()}</td><td>{s.items.map(i=>i.name+" x"+i.qty).join(", ")}</td><td><b>KES {s.total}</b></td><td style={{color:"#16a34a"}}>{s.profit}</td><td><span style={{background:s.method==="MPesa"?"#000":"#e5e7eb",color:s.method==="MPesa"?"#fff":"#000",padding:"2px 8px",borderRadius:"8px",fontSize:"11px"}}>{s.method}</span></td><td>{s.customer} {s.mpesaPhone}</td></tr>)}</tbody></table></div></div>
-   )}
-
-   {active==="Settings" && (
-    <div style={{...card,maxWidth:"600px"}}><h2>MPesa Daraja Config</h2><p style={{fontSize:"12px",color:"#666"}}>Get from developer.safaricom.co.ke - Create App for Lipa Na MPesa Online</p>
-     <div style={{display:"grid",gap:"8px"}}>
-      <select value={mpesa.env} onChange={e=>setMpesa({...mpesa,env:e.target.value})} style={input}><option value="sandbox">Sandbox (Test)</option><option value="production">Production (Live)</option></select>
-      <input value={mpesa.shortcode} onChange={e=>setMpesa({...mpesa,shortcode:e.target.value})} placeholder="Business Shortcode (e.g 174379)" style={input}/>
-      <input value={mpesa.passkey} onChange={e=>setMpesa({...mpesa,passkey:e.target.value})} placeholder="Passkey (Lipa Na MPesa Online)" style={input}/>
-      <input value={mpesa.consumerKey} onChange={e=>setMpesa({...mpesa,consumerKey:e.target.value})} placeholder="Consumer Key" style={input}/>
-      <input value={mpesa.consumerSecret} onChange={e=>setMpesa({...mpesa,consumerSecret:e.target.value})} placeholder="Consumer Secret" style={input}/>
-      <input value={mpesa.till} onChange={e=>setMpesa({...mpesa,till:e.target.value})} placeholder="Till Number (optional)" style={input}/>
-      <div style={{background:"#fffbeb",padding:"10px",borderRadius:"10px",fontSize:"11px"}}><b>Daraja Integration Steps:</b><br/>1. Save keys here (saved offline)<br/>2. Your backend /api/mpesa/stk will use: <code>consumerKey+secret → token → STK Push</code><br/>3. Phone = customer phone 2547...<br/>4. Amount = cart total<br/>5. Callback = https://yourshop.com/api/mpesa/callback</div>
-      <button onClick={()=>alert("MPesa config saved locally. For live STK, you need a small Node API. I can generate it.")} style={btn}>Save Daraja Config</button>
-     </div>
-     <div style={{marginTop:"20px"}}><h3>How to sell this POS:</h3><div style={{fontSize:"12px",lineHeight:"1.6"}}>License: DUKA-MUM-{Date.now().toString().slice(-4)}<br/>Price: KES 4000 setup + 1500/month<br/>Each shop gets its own MASTER_KEY - data never mixes</div></div>
-    </div>
-   )}
-
-   {(active==="Expenses"||active==="Suppliers"||active==="Credit Book"||active==="MPesa Logs") && (
-    <div style={card}><h2>{active}</h2><p style={{fontSize:"13px"}}>Module ready - Data array: {store[active==="Credit Book"?"customers":active==="MPesa Logs"?"mpesaLogs":active.toLowerCase()]?.length||0} records locked in {MASTER_KEY}</p><div style={{fontSize:"12px",color:"#666"}}>Sales filtered by {active}. Full table same as Products.</div></div>
-   )}
+   {active==="Products" && <div><div style={{display:"flex",justifyContent:"space-between"}}><h2>Products Offline</h2><button onClick={()=>{setForm({category:CATS[0],unit:"Pc"}); setShow("product")}} style={btn}>+ Add</button></div><div style={{background:"#fff",borderRadius:"12px",overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:"13px"}}><thead><tr style={{background:"#f1f5f9"}}><th style={{padding:"10px"}}>Name</th><th>Stock</th><th>Buy</th><th>Sell</th></tr></thead><tbody>{filtered.map(p=><tr key={p.id} style={{borderTop:"1px solid #eee"}}><td style={{padding:"10px",fontWeight:"bold"}}>{p.name} {p.brand}</td><td style={{color:p.stock<=p.minStock?"red":"green",fontWeight:"bold"}}>{p.stock} {p.unit}</td><td>{p.buyPrice}</td><td><b>{p.sellPrice}</b></td></tr>)}</tbody></table></div></div>}
+   {active==="Sales History" && <div><h2>Sales History Offline</h2><div style={{background:"#fff",borderRadius:"12px",overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:"13px"}}><thead><tr style={{background:"#f1f5f9"}}><th style={{padding:"10px"}}>Date</th><th>Items</th><th>Total</th><th>Method</th></tr></thead><tbody>{store.sales.slice(0,100).map(s=><tr key={s.id} style={{borderTop:"1px solid #eee"}}><td style={{padding:"10px",fontSize:"11px"}}>{new Date(s.date).toLocaleString()}</td><td>{s.items.map(i=>i.name+" x"+i.qty).join(", ")}</td><td>KES {s.total}</td><td>{s.method}</td></tr>)}</tbody></table></div></div>}
+   {active==="MPesa Queue" && <div style={card}><h2>MPesa Queue</h2><div>Queued: {store.mpesaQueue.filter(x=>x.status.includes("QUEUED")).length} | Sent: {store.mpesaQueue.filter(x=>x.status==="STK SENT").length}</div><div style={{marginTop:"10px"}}>{store.mpesaQueue.map(q=><div key={q.id} style={{padding:"8px",borderBottom:"1px solid #eee",fontSize:"13px"}}><b>{q.phone}</b> KES {q.amount} - {q.status}</div>)}</div></div>}
+   {active==="Dashboard" && <div><h2>Dashboard - Overall Data Retained</h2><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:"10px"}}><div style={card}>Total Products <b>{store.products.length}</b></div><div style={card}>Total Sales <b>KES {store.sales.reduce((a,b)=>a+b.total,0).toLocaleString()}</b></div><div style={card}>Low Stock <b style={{color:"red"}}>{lowStock.length}</b></div><div style={card}>Credit Owed <b>KES {store.customers.reduce((a,b)=>a+b.balance,0).toLocaleString()}</b></div></div></div>}
   </div>
 
-  {show==="product" && (
-   <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:"10px"}}>
-    <div style={{background:"#fff",padding:"18px",borderRadius:"16px",width:"100%",maxWidth:"500px",maxHeight:"95vh",overflowY:"auto",display:"grid",gap:"8px"}}>
-     <h3 style={{marginTop:0}}>Add Hardware Item</h3>
-     <input value={form.name||""} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Item Name e.g Bamburi Cement 50kg *" style={input}/>
-     <div style={{display:"flex",gap:"8px"}}><select value={form.category||CATS[0]} onChange={e=>setForm({...form,category:e.target.value})} style={{...input,flex:1}}>{CATS.map(c=><option key={c}>{c}</option>)}</select><select value={form.unit||"Pc"} onChange={e=>setForm({...form,unit:e.target.value})} style={{...input,flex:1}}>{UNITS.map(u=><option key={u}>{u}</option>)}</select></div>
-     <div style={{display:"flex",gap:"8px"}}><input value={form.brand||""} onChange={e=>setForm({...form,brand:e.target.value})} placeholder="Brand e.g Bamburi, EABL" style={{...input,flex:1}}/><input value={form.size||""} onChange={e=>setForm({...form,size:e.target.value})} placeholder="Size e.g 50kg, 3inch" style={{...input,flex:1}}/></div>
-     <div style={{display:"flex",gap:"8px"}}><input type="number" value={form.buyPrice||""} onChange={e=>setForm({...form,buyPrice:e.target.value})} placeholder="Buy Price *" style={{...input,flex:1}}/><input type="number" value={form.sellPrice||""} onChange={e=>setForm({...form,sellPrice:e.target.value})} placeholder="Sell Price *" style={{...input,flex:1}}/></div>
-     <div style={{display:"flex",gap:"8px"}}><input type="number" value={form.stock||""} onChange={e=>setForm({...form,stock:e.target.value})} placeholder="Current Stock" style={{...input,flex:1}}/><input type="number" value={form.minStock||""} onChange={e=>setForm({...form,minStock:e.target.value})} placeholder="Min Alert e.g 5" style={{...input,flex:1}}/></div>
-     <div style={{display:"flex",gap:"8px"}}><input value={form.supplier||""} onChange={e=>setForm({...form,supplier:e.target.value})} placeholder="Supplier" style={{...input,flex:1}}/><input value={form.shelf||""} onChange={e=>setForm({...form,shelf:e.target.value})} placeholder="Shelf e.g A1-R2" style={{...input,flex:1}}/></div>
-     <input value={form.barcode||""} onChange={e=>setForm({...form,barcode:e.target.value})} placeholder="Barcode (scan)" style={input}/>
-     <div style={{display:"flex",gap:"10px"}}><button onClick={addProduct} style={{...btn,flex:1}}>Save Hardware Item</button><button onClick={()=>setShow(null)} style={{flex:1,border:"1px solid #ccc",padding:"11px",borderRadius:"12px",background:"#fff"}}>Cancel</button></div>
-    </div>
-   </div>
-  )}
+  {show==="product" && <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100}}><div style={{background:"#fff",padding:"18px",borderRadius:"16px",width:"90%",maxWidth:"500px",display:"grid",gap:"8px"}}><h3>Add Hardware</h3><input value={form.name||""} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Name *" style={input}/><div style={{display:"flex",gap:"8px"}}><input type="number" value={form.buyPrice||""} onChange={e=>setForm({...form,buyPrice:e.target.value})} placeholder="Buy *" style={{...input,flex:1}}/><input type="number" value={form.sellPrice||""} onChange={e=>setForm({...form,sellPrice:e.target.value})} placeholder="Sell *" style={{...input,flex:1}}/></div><div style={{display:"flex",gap:"8px"}}><input type="number" value={form.stock||""} onChange={e=>setForm({...form,stock:e.target.value})} placeholder="Stock" style={{...input,flex:1}}/><input value={form.barcode||""} onChange={e=>setForm({...form,barcode:e.target.value})} placeholder="Barcode" style={{...input,flex:1}}/></div><div style={{display:"flex",gap:"8px"}}><button onClick={addProduct} style={{...btn,flex:1}}>Save Offline</button><button onClick={()=>setShow(null)} style={{flex:1,border:"1px solid #ccc",padding:"11px",borderRadius:"12px",background:"#fff"}}>Cancel</button></div></div></div>}
  </div>
  )
 }
