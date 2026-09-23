@@ -2,7 +2,7 @@
 import { useState } from 'react'
 
 export default function DukaPulsePro() {
-  const [cart, setCart] = useState<any[]>([])
+  
   const products = [
     { name: "Cement - Bamburi", price: 750, stock: 120, sku: "CEM-001" },
     { name: "Iron Sheet - MRM", price: 1850, stock: 45, sku: "IRON-02" },
