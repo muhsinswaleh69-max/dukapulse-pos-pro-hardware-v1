@@ -76,6 +76,7 @@ export default function Page() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
   const [salesToday, setSalesToday] = useState(0);
+  const [profitToday, setProfitToday] = useState(0);
   const [showAdd, setShowAdd] = useState(false);
   const [showProfit, setShowProfit] = useState(false);
   const [pin, setPin] = useState("");
@@ -84,8 +85,10 @@ export default function Page() {
   useEffect(()=>{
     const saved = localStorage.getItem("dukapulse_stock_v4_full");
     const savedSales = localStorage.getItem("dukapulse_sales_today_v4");
+    const savedProfit = localStorage.getItem("dukapulse_profit_today_v4");
     if(saved) setItems(JSON.parse(saved));
     if(savedSales) setSalesToday(Number(savedSales));
+    if(savedProfit) setProfitToday(Number(savedProfit));
   }, []);
 
   const saveStock = (newItems: Item[]) => {
@@ -149,10 +152,13 @@ export default function Page() {
     cart.forEach(c=>{ newItems = newItems.map(it=> it.id===c.id ? {...it, stock: it.stock - c.qty} : it); });
     saveStock(newItems);
     const newSales = salesToday + totalSell;
+    const newProfit = profitToday + totalProfit;
     setSalesToday(newSales);
+    setProfitToday(newProfit);
     localStorage.setItem("dukapulse_sales_today_v4", String(newSales));
-    const rec = { id:"RCPT-"+Date.now().toString().slice(-6), date:new Date().toLocaleString(), cart:[...cart], total: totalSell, phone: mpesaPhone || "CASH", method };
-    setReceipt(rec); setLoading(false); setStatus(`✅ ${method} Paid!`);
+    localStorage.setItem("dukapulse_profit_today_v4", String(newProfit));
+    const rec = { id:"RCPT-"+Date.now().toString().slice(-6), date:new Date().toLocaleString(), cart:[...cart], total: totalSell, profit: totalProfit, phone: mpesaPhone || "CASH", method };
+    setReceipt(rec); setLoading(false); setStatus(`✅ ${method} Paid! Profit KES ${totalProfit}`);
     setTimeout(()=>window.print(), 400);
   };
 
@@ -164,7 +170,7 @@ export default function Page() {
       
       <div className="no-print" style={{background:"linear-gradient(135deg,#000,#2563eb)", color:"white", padding:16, borderRadius:14, marginBottom:12}}>
         <div style={{display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:10}}>
-          <div><h1 style={{margin:0, fontSize:20, fontWeight:900}}>DUKAPULSE POS PRO - MUMIAS</h1><p style={{margin:"4px 0 0 0", fontSize:12, opacity:0.9}}>{items.length} Items ● Sales Today KES {salesToday.toLocaleString()} ● {status || "Ready"}</p></div>
+          <div><h1 style={{margin:0, fontSize:20, fontWeight:900}}>DUKAPULSE POS PRO - MUMIAS</h1><p style={{margin:"4px 0 0 0", fontSize:12, opacity:0.9}}>{items.length} Items ● Sales Today KES {salesToday.toLocaleString()} ● Profit Today KES {profitToday.toLocaleString()} ● {status || "Ready"}</p></div>
           <div style={{display:"flex", gap:8}}>
             <button onClick={()=>setShowAdd(!showAdd)} style={{background:"#facc15", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>+ ADD MATERIAL</button>
             <button onClick={()=>setShowProfit(true)} style={{background:"#000", color:"#facc15", border:"1px solid #facc15", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>🔒 MY PROFIT</button>
@@ -201,19 +207,18 @@ export default function Page() {
                 <button onClick={()=> { if(pin!=="1234") alert("Wrong PIN!"); }} style={{padding:"10px 15px", borderRadius:8, background:"#facc15", fontWeight:800}}>Unlock</button>
                 <button onClick={()=>setShowProfit(false)} style={{padding:"10px 15px", borderRadius:8}}>Close</button>
               </div>
-              <p style={{fontSize:11, opacity:0.7, marginTop:8}}>Default PIN is 1234 - change it later</p>
             </div>
           ) : (
             <div>
               <h3 style={{marginTop:0}}>💰 SECRET PROFIT DASHBOARD (Only You)</h3>
               <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10}}>
-                <div style={{background:"#111", padding:12, borderRadius:8}}><div style={{fontSize:11}}>CART SALES</div><div style={{fontSize:18, fontWeight:900}}>KES {totalSell.toLocaleString()}</div></div>
-                <div style={{background:"#111", padding:12, borderRadius:8}}><div style={{fontSize:11}}>YOUR COST</div><div style={{fontSize:18}}>KES {totalBuy.toLocaleString()}</div></div>
-                <div style={{background:"#facc15", color:"black", padding:12, borderRadius:8}}><div style={{fontSize:11}}>PROFIT</div><div style={{fontSize:20, fontWeight:900}}>KES {totalProfit.toLocaleString()}</div><div style={{fontSize:11}}>{totalSell? ((totalProfit/totalSell)*100).toFixed(1):0}% margin</div></div>
+                <div style={{background:"#111", padding:12, borderRadius:8}}><div style={{fontSize:11}}>THIS CART</div><div style={{fontSize:16, fontWeight:900}}>Sales KES {totalSell.toLocaleString()}</div><div style={{fontSize:12}}>Cost KES {totalBuy.toLocaleString()}</div></div>
+                <div style={{background:"#111", padding:12, borderRadius:8}}><div style={{fontSize:11}}>TODAY TOTALS</div><div style={{fontSize:16}}>Sales KES {salesToday.toLocaleString()}</div><div style={{fontSize:12}}>Profit KES {profitToday.toLocaleString()}</div></div>
+                <div style={{background:"#facc15", color:"black", padding:12, borderRadius:8}}><div style={{fontSize:11}}>PROFIT THIS CART</div><div style={{fontSize:20, fontWeight:900}}>KES {totalProfit.toLocaleString()}</div><div style={{fontSize:11}}>{totalSell? ((totalProfit/totalSell)*100).toFixed(1):0}% margin</div></div>
               </div>
-              <div style={{marginTop:12, display:"flex", gap:8}}>
+              <div style={{marginTop:12, display:"flex", gap:8, alignItems:"center"}}>
                 <button onClick={()=> { setShowProfit(false); setPin(""); }} style={{background:"#facc15", color:"black", padding:"8px 16px", borderRadius:8, fontWeight:800, border:"none"}}>Lock 🔒</button>
-                <span style={{fontSize:12, alignSelf:"center"}}>Today Total Sales: KES {salesToday.toLocaleString()}</span>
+                <button onClick={()=> { if(confirm("Reset today sales & profit to 0?")){ setSalesToday(0); setProfitToday(0); localStorage.removeItem("dukapulse_sales_today_v4"); localStorage.removeItem("dukapulse_profit_today_v4"); } }} style={{background:"#333", color:"white", padding:"8px 12px", borderRadius:8, fontSize:11}}>Reset Today</button>
               </div>
             </div>
           )}
@@ -240,12 +245,11 @@ export default function Page() {
           </div>
           <hr/>
           <h2 style={{margin:"8px 0"}}>Total: KES {totalSell.toLocaleString()}</h2>
-          <p style={{fontSize:11, color:"#666", margin:0}}>Customer sees only this total. Profit is hidden.</p>
+          <p style={{fontSize:11, color:"#666", margin:0}}>Customer sees only this. Profit hidden.</p>
           <input value={mpesaPhone} onChange={e=>setMpesaPhone(e.target.value)} placeholder="07xx M-Pesa / empty=CASH" style={{width:"100%", padding:11, borderRadius:8, border:"2px solid black", margin:"8px 0", fontSize:13}}/>
           {status && <div style={{background:"#dbeafe", padding:6, borderRadius:6, fontSize:11, marginBottom:6}}>{status}</div>}
           <button disabled={loading} onClick={handleSale} style={{width:"100%", background: loading?"#9ca3af":"#000", color:"white", border:"none", padding:14, borderRadius:10, fontWeight:900, cursor:"pointer"}}>{loading?"⏳...":"LIPA NA M-PESA / CASH"}</button>
           <button onClick={()=>setCart([])} style={{width:"100%", marginTop:6, background:"#f3f4f6", border:"none", padding:9, borderRadius:8, cursor:"pointer", fontSize:12}}>Clear Cart</button>
-          <div style={{marginTop:10, fontSize:10, background:"#f9fafb", padding:6, borderRadius:6, color:"#666"}}>💾 {items.length} items saved. Secret profit only visible with PIN.</div>
         </div>
       </div>
 
@@ -255,21 +259,11 @@ export default function Page() {
             <h3 style={{textAlign:"center", margin:0}}>MUMIAS HARDWARE ✅</h3>
             <div style={{fontSize:11, margin:"6px 0", textAlign:"center"}}>{receipt.id}<br/>{receipt.date}<br/>{receipt.method} - {receipt.phone}</div><hr/>
             {receipt.cart.map((c:any)=>(<div key={c.id} style={{display:"flex", justifyContent:"space-between", fontSize:11}}><span>{c.name.slice(0,25)} x{c.qty}</span><span>{c.sell*c.qty}</span></div>))}<hr/>
-            <div style={{display:"flex", justifyContent:"space-between", fontWeight:900}}><span>TOTAL (Customer pays)</span><span>KES {receipt.total}</span></div>
-            <div style={{fontSize:9, textAlign:"center", marginTop:8, color:"#666"}}>Thank you! Profit hidden from customer.</div>
+            <div style={{display:"flex", justifyContent:"space-between", fontWeight:900}}><span>TOTAL</span><span>KES {receipt.total}</span></div>
+            <div style={{fontSize:9, textAlign:"center", marginTop:8, color:"#666"}}>Thank you! Profit hidden.</div>
             <button onClick={()=>window.print()} style={{width:"100%", background:"black", color:"white", padding:12, borderRadius:8, marginTop:10, border:"none", fontWeight:800}}>🖨️ PRINT RECEIPT</button>
-            <button onClick={closeReceipt} style={{width:"100%", background:"#2563eb", color:"white", padding:10, borderRadius:8, marginTop:6, border:"none"}}>New Sale - Next Customer</button>
+            <button onClick={closeReceipt} style={{width:"100%", background:"#2563eb", color:"white", padding:10, borderRadius:8, marginTop:6, border:"none"}}>New Sale</button>
           </div>
-        </div>
-      )}
-
-      {receipt && (
-        <div className="print-only" style={{fontFamily:"monospace", padding:20}}>
-          <h2 style={{textAlign:"center"}}>MUMIAS HARDWARE</h2>
-          <p style={{textAlign:"center", fontSize:12}}>{receipt.id} | {receipt.date}<br/>{receipt.method} - {receipt.phone}</p><hr/>
-          {receipt.cart.map((c:any)=>(<div key={c.id} style={{display:"flex", justifyContent:"space-between"}}><span>{c.name} x{c.qty}</span><span>{c.sell*c.qty}</span></div>))}<hr/>
-          <h3 style={{display:"flex", justifyContent:"space-between"}}><span>TOTAL</span><span>KES {receipt.total}</span></h3>
-          <p style={{textAlign:"center"}}>Asante!</p>
         </div>
       )}
     </main>
