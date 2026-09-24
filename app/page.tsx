@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 type Item = { id: number; name: string; buy: number; sell: number; stock: number; category: string; };
 type CartItem = Item & { qty: number; customSell?: number };
+type DailyRecord = { sales: number; profit: number; count: number };
 
 const INITIAL_ITEMS: Item[] = [
   { id: 1, name: "Cement - Nyumba 50kg (Mumias best)", buy: 600, sell: 750, stock: 150, category: "Cement" },
@@ -35,8 +36,8 @@ const INITIAL_ITEMS: Item[] = [
   { id: 29, name: "Primer - Undercoat 4L", buy: 1600, sell: 2000, stock: 20, category: "Paint" },
   { id: 30, name: "Thinner - 1L", buy: 320, sell: 400, stock: 40, category: "Paint" },
   { id: 31, name: "Roller + Brush Set", buy: 250, sell: 350, stock: 30, category: "Paint" },
-  { id: 32, name: "PVC Pipe 1/2 inch - 4m (Heavy)", buy: 250, sell: 350, stock: 50, category: "Plumbing" },
-  { id: 33, name: "PVC Pipe 3/4 inch - 4m (Heavy)", buy: 380, sell: 500, stock: 50, category: "Plumbing" },
+  { id: 32, name: "PVC Pipe 1/2 inch - 4m", buy: 250, sell: 350, stock: 50, category: "Plumbing" },
+  { id: 33, name: "PVC Pipe 3/4 inch - 4m", buy: 380, sell: 500, stock: 50, category: "Plumbing" },
   { id: 34, name: "PVC Pipe 1 inch - 4m", buy: 550, sell: 700, stock: 40, category: "Plumbing" },
   { id: 35, name: "PPR Pipe 1/2 - 4m (Hot)", buy: 450, sell: 600, stock: 30, category: "Plumbing" },
   { id: 36, name: "PVC Elbow 1/2 inch", buy: 15, sell: 30, stock: 150, category: "Plumbing" },
@@ -74,6 +75,9 @@ const INITIAL_ITEMS: Item[] = [
   { id: 68, name: "Quarry Dust - Tonne", buy: 1500, sell: 2000, stock: 999, category: "Aggregates" },
 ];
 
+function getTodayKey() { return new Date().toISOString().slice(0,10); }
+function getDateKey(d: Date) { return d.toISOString().slice(0,10); }
+
 export default function Page() {
   const [items, setItems] = useState<Item[]>(INITIAL_ITEMS);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -85,26 +89,45 @@ export default function Page() {
   const [status, setStatus] = useState("");
   const [salesToday, setSalesToday] = useState(0);
   const [profitToday, setProfitToday] = useState(0);
+  const [history, setHistory] = useState<Record<string, DailyRecord>>({});
   const [showAdd, setShowAdd] = useState(false);
   const [showProfit, setShowProfit] = useState(false);
+  const [calendarView, setCalendarView] = useState<"today"|"week"|"month">("today");
   const [pin, setPin] = useState("");
   const [newItem, setNewItem] = useState({ name: "", buy: "", sell: "", stock: "", category: "General" });
 
   useEffect(()=>{
-    const saved = localStorage.getItem("dukapulse_stock_v4_full");
-    const savedSales = localStorage.getItem("dukapulse_sales_today_v4");
-    const savedProfit = localStorage.getItem("dukapulse_profit_today_v4");
+    const saved = localStorage.getItem("dukapulse_stock_v5");
+    const savedSales = localStorage.getItem("dukapulse_sales_today_v5");
+    const savedProfit = localStorage.getItem("dukapulse_profit_today_v5");
+    const savedHist = localStorage.getItem("dukapulse_history_v5");
+    const savedDate = localStorage.getItem("dukapulse_last_date_v5");
+    const today = getTodayKey();
     if(saved){ try{ const p=JSON.parse(saved); if(p.length>0) setItems(p);}catch{} }
-    if(savedSales) setSalesToday(Number(savedSales));
-    if(savedProfit) setProfitToday(Number(savedProfit));
+    if(savedHist){ try{ setHistory(JSON.parse(savedHist)); }catch{} }
+    // If new day, reset today counters but keep history
+    if(savedDate!== today){
+      localStorage.setItem("dukapulse_last_date_v5", today);
+      setSalesToday(0); setProfitToday(0);
+      localStorage.setItem("dukapulse_sales_today_v5", "0");
+      localStorage.setItem("dukapulse_profit_today_v5", "0");
+    } else {
+      if(savedSales) setSalesToday(Number(savedSales));
+      if(savedProfit) setProfitToday(Number(savedProfit));
+    }
   }, []);
 
   const saveStock = (newItems: Item[]) => {
     setItems(newItems);
-    localStorage.setItem("dukapulse_stock_v4_full", JSON.stringify(newItems));
+    localStorage.setItem("dukapulse_stock_v5", JSON.stringify(newItems));
   };
 
-  const categories = ["All", ...Array.from(new Set(items.map(i=>i.category)))];
+  const saveHistory = (newHist: Record<string, DailyRecord>) => {
+    setHistory(newHist);
+    localStorage.setItem("dukapulse_history_v5", JSON.stringify(newHist));
+  };
+
+  const categories = ["All",...Array.from(new Set(items.map(i=>i.category)))];
   const filtered = items.filter(i => i.name.toLowerCase().includes(search.toLowerCase()) && (category==="All" || i.category===category));
 
   const addToCart = (item: Item) => {
@@ -115,12 +138,32 @@ export default function Page() {
       return [...prev, {...item, qty:1, customSell: item.sell}];
     });
   };
-  const updateCartPrice = (id: number, newPrice: number) => setCart(prev => prev.map(p => p.id===id ? {...p, customSell: newPrice} : p));
-  const getSellPrice = (c: CartItem) => c.customSell ?? c.sell;
+  const updateCartPrice = (id: number, newPrice: number) => setCart(prev => prev.map(p => p.id===id? {...p, customSell: newPrice} : p));
+  const getSellPrice = (c: CartItem) => c.customSell?? c.sell;
   const totalSell = cart.reduce((s,i)=>s+getSellPrice(i)*i.qty,0);
   const totalBuy = cart.reduce((s,i)=>s+i.buy*i.qty,0);
   const totalProfit = totalSell - totalBuy;
   const projectedProfitToday = profitToday + totalProfit;
+
+  // Calendar calculations
+  const todayKey = getTodayKey();
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate()-1);
+  const yesterdayKey = getDateKey(yesterday);
+
+  const getLast7Days = () => {
+    const days = [];
+    for(let i=0;i<7;i++){ const d=new Date(); d.setDate(d.getDate()-i); const k=getDateKey(d); days.push({key:k, date:d, data: history[k] || (k===todayKey? {sales:salesToday, profit:profitToday, count:0} : undefined)}); }
+    return days;
+  };
+  const getThisMonth = () => {
+    const entries = Object.entries(history).filter(([k])=> k.startsWith(todayKey.slice(0,7)));
+    let mSales = entries.reduce((s,[,v])=>s+v.sales,0) + (history[todayKey]? 0 : salesToday);
+    let mProfit = entries.reduce((s,[,v])=>s+v.profit,0) + (history[todayKey]? 0 : profitToday);
+    // include today if not in history yet
+    if(!history[todayKey]){ mSales+=salesToday; mProfit+=profitToday; }
+    else { mSales = entries.reduce((s,[,v])=>s+v.sales,0); mProfit = entries.reduce((s,[,v])=>s+v.profit,0); if(!entries.find(([k])=>k===todayKey)){ mSales+=salesToday; mProfit+=profitToday; } }
+    return {mSales, mProfit, entries};
+  };
 
   const handleSale = async () => {
     if(cart.length===0) return alert("Cart empty!");
@@ -130,15 +173,25 @@ export default function Page() {
   };
   const completeSale = (method: string) => {
     let newItems=[...items];
-    cart.forEach(c=>{ newItems=newItems.map(it=> it.id===c.id ? {...it, stock: it.stock - c.qty} : it); });
+    cart.forEach(c=>{ newItems=newItems.map(it=> it.id===c.id? {...it, stock: it.stock - c.qty} : it); });
     saveStock(newItems);
-    setSalesToday(s=>{const ns=s+totalSell; localStorage.setItem("dukapulse_sales_today_v4", String(ns)); return ns;});
-    setProfitToday(p=>{const np=p+totalProfit; localStorage.setItem("dukapulse_profit_today_v4", String(np)); return np;});
+    const key = getTodayKey();
+    const newHist = {...history};
+    if(!newHist[key]) newHist[key] = {sales:0, profit:0, count:0};
+    newHist[key] = {sales: newHist[key].sales + totalSell, profit: newHist[key].profit + totalProfit, count: newHist[key].count + 1};
+    saveHistory(newHist);
+    setSalesToday(s=>{const ns=s+totalSell; localStorage.setItem("dukapulse_sales_today_v5", String(ns)); return ns;});
+    setProfitToday(p=>{const np=p+totalProfit; localStorage.setItem("dukapulse_profit_today_v5", String(np)); return np;});
     const rec={id:"RCPT-"+Date.now().toString().slice(-6), date:new Date().toLocaleString(), cart:cart.map(c=>({...c, sell:getSellPrice(c)})), total:totalSell, phone:mpesaPhone||"CASH", method};
     setReceipt(rec); setLoading(false); setStatus("✅ Paid!");
     setTimeout(()=>window.print(),400);
   };
   const closeReceipt=()=>{setReceipt(null); setCart([]); setMpesaPhone(""); setStatus("");};
+
+  const last7 = getLast7Days();
+  const month = getThisMonth();
+  const weekSales = last7.reduce((s,d)=> s + (d.data?.sales||0), 0);
+  const weekProfit = last7.reduce((s,d)=> s + (d.data?.profit||0), 0);
 
   return (
     <main style={{fontFamily:"system-ui", padding:12, maxWidth:1300, margin:"0 auto", background:"#f5f7fb", minHeight:"100vh"}}>
@@ -150,29 +203,87 @@ export default function Page() {
         <div style={{display:"flex", gap:6, marginTop:10, flexWrap:"wrap"}}>{categories.map(cat=>(<button key={cat} onClick={()=>setCategory(cat)} style={{background: category===cat?"white":"rgba(255,255,255,0.2)", color: category===cat?"black":"white", border:"none", padding:"6px 12px", borderRadius:20, fontSize:11, fontWeight:700, cursor:"pointer"}}>{cat}</button>))}</div>
       </div>
 
-      {showAdd && (<div className="no-print" style={{background:"white", border:"2px solid #facc15", padding:15, borderRadius:12, marginBottom:12}}><h3 style={{marginTop:0}}>Add Material</h3><div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8}}><input placeholder="Name" value={newItem.name} onChange={e=>setNewItem({...newItem, name:e.target.value})} style={{padding:10, borderRadius:8, border:"1px solid #ddd", gridColumn:"1 / -1"}}/><input placeholder="Buy Price" type="number" value={newItem.buy} onChange={e=>setNewItem({...newItem, buy:e.target.value})} style={{padding:10, borderRadius:8, border:"1px solid #ddd"}}/><input placeholder="Sell Price" type="number" value={newItem.sell} onChange={e=>setNewItem({...newItem, sell:e.target.value})} style={{padding:10, borderRadius:8, border:"1px solid #ddd"}}/><input placeholder="Stock" type="number" value={newItem.stock} onChange={e=>setNewItem({...newItem, stock:e.target.value})} style={{padding:10, borderRadius:8, border:"1px solid #ddd"}}/><input placeholder="Category" value={newItem.category} onChange={e=>setNewItem({...newItem, category:e.target.value})} style={{padding:10, borderRadius:8, border:"1px solid #ddd"}}/></div><button onClick={()=>{if(!newItem.name||!newItem.buy||!newItem.sell) return alert("Jaza"); const it:Item={id:Date.now(), name:newItem.name, buy:parseInt(newItem.buy), sell:parseInt(newItem.sell), stock:parseInt(newItem.stock)||10, category:newItem.category||"General"}; saveStock([it, ...items]); setNewItem({name:"",buy:"",sell:"",stock:"",category:"General"}); setShowAdd(false);}} style={{background:"#000", color:"#fff", padding:12, width:"100%", borderRadius:8, marginTop:10, fontWeight:800, border:"none"}}>Save ✅</button></div>)}
+      {showProfit && (
+        <div className="no-print" style={{background:"#000", color:"#facc15", padding:16, borderRadius:12, marginBottom:12, border:"2px solid #facc15"}}>
+          {pin!=="1234"? (
+            <div><h3>🔒 Owner PIN</h3><div style={{display:"flex", gap:8}}><input type="password" value={pin} onChange={e=>setPin(e.target.value)} placeholder="1234" style={{padding:10, borderRadius:8, flex:1}}/><button onClick={()=>{if(pin!=="1234") alert("Wrong PIN!");}} style={{padding:"10px 15px", borderRadius:8, background:"#facc15", fontWeight:800}}>Unlock</button><button onClick={()=>setShowProfit(false)} style={{padding:"10px 15px", borderRadius:8}}>Close</button></div></div>
+          ) : (
+            <div>
+              <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+                <h3 style={{margin:0}}>💰 PROFIT CALENDAR - BEST VIEW</h3>
+                <div style={{display:"flex", gap:6}}>
+                  <button onClick={()=>setCalendarView("today")} style={{background:calendarView==="today"?"#facc15":"#222", color:calendarView==="today"?"#000":"#fff", border:"none", padding:"6px 10px", borderRadius:6, fontSize:11, fontWeight:700}}>Today</button>
+                  <button onClick={()=>setCalendarView("week")} style={{background:calendarView==="week"?"#facc15":"#222", color:calendarView==="week"?"#000":"#fff", border:"none", padding:"6px 10px", borderRadius:6, fontSize:11, fontWeight:700}}>Last 7 Days</button>
+                  <button onClick={()=>setCalendarView("month")} style={{background:calendarView==="month"?"#facc15":"#222", color:calendarView==="month"?"#000":"#fff", border:"none", padding:"6px 10px", borderRadius:6, fontSize:11, fontWeight:700}}>Month Total</button>
+                </div>
+              </div>
 
-      {showProfit && (<div className="no-print" style={{background:"#000", color:"#facc15", padding:16, borderRadius:12, marginBottom:12, border:"2px solid #facc15"}}>{pin!=="1234" ? (<div><h3>🔒 Owner PIN</h3><div style={{display:"flex", gap:8}}><input type="password" value={pin} onChange={e=>setPin(e.target.value)} placeholder="1234" style={{padding:10, borderRadius:8, flex:1}}/><button onClick={()=>{if(pin!=="1234") alert("Wrong PIN!");}} style={{padding:"10px 15px", borderRadius:8, background:"#facc15", fontWeight:800}}>Unlock</button><button onClick={()=>setShowProfit(false)} style={{padding:"10px 15px", borderRadius:8}}>Close</button></div></div>) : (<div><h3 style={{marginTop:0}}>💰 SECRET DASHBOARD - BEST VIEW</h3><div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10}}>
-        <div style={{background:"#111", padding:12, borderRadius:8, border:"1px solid #333"}}><div style={{fontSize:11, opacity:0.7}}>THIS CART (Bargain Check)</div><div style={{fontSize:13, marginTop:6}}>Sales: KES {totalSell.toLocaleString()}</div><div style={{fontSize:12}}>Cost: KES {totalBuy.toLocaleString()}</div><div style={{fontSize:13, color:"#4ade80", marginTop:6, fontWeight:800}}>Profit: KES {totalProfit.toLocaleString()}</div><div style={{fontSize:10, marginTop:4}}>{totalSell? ((totalProfit/totalSell)*100).toFixed(1):0}% margin</div></div>
-        <div style={{background:"#111", padding:12, borderRadius:8, border:"1px solid #333"}}><div style={{fontSize:11, opacity:0.7}}>TODAY SUMMARY</div><div style={{fontSize:13, marginTop:6}}>Sales Today: KES {salesToday.toLocaleString()}</div><div style={{fontSize:12}}>Profit Earned: KES {profitToday.toLocaleString()}</div><div style={{fontSize:11, marginTop:8, color:"#aaa"}}>Items sold today already counted in profit</div></div>
-        <div style={{background:"#facc15", color:"black", padding:14, borderRadius:10}}><div style={{fontSize:11, fontWeight:700}}>TODAY PROFIT (BIG)</div><div style={{fontSize:26, fontWeight:900, marginTop:4}}>KES {projectedProfitToday.toLocaleString()}</div><div style={{fontSize:11, marginTop:4}}>{cart.length>0 ? `If you sell this cart → ${projectedProfitToday.toLocaleString()}` : "Total profit in pocket today"}</div></div>
-      </div><button onClick={()=>{setShowProfit(false); setPin("");}} style={{background:"#facc15", color:"black", padding:"8px 16px", borderRadius:8, fontWeight:800, border:"none", marginTop:12}}>Lock 🔒</button></div>)}</div>)}
+              {calendarView==="today" && (
+                <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginTop:12}}>
+                  <div style={{background:"#111", padding:12, borderRadius:8, border:"1px solid #333"}}><div style={{fontSize:11, opacity:0.7}}>THIS CART</div><div style={{fontSize:13, marginTop:6}}>Sales: KES {totalSell.toLocaleString()}</div><div style={{fontSize:12}}>Cost: KES {totalBuy.toLocaleString()}</div><div style={{fontSize:13, color:"#4ade80", marginTop:6, fontWeight:800}}>Profit: KES {totalProfit.toLocaleString()}</div></div>
+                  <div style={{background:"#111", padding:12, borderRadius:8, border:"1px solid #333"}}><div style={{fontSize:11, opacity:0.7}}>TODAY SUMMARY</div><div style={{fontSize:13, marginTop:6}}>Sales Today: KES {salesToday.toLocaleString()}</div><div style={{fontSize:12}}>Profit Earned: KES {profitToday.toLocaleString()}</div><div style={{fontSize:11, marginTop:6}}>Yesterday: KES {(history[yesterdayKey]?.profit||0).toLocaleString()}</div></div>
+                  <div style={{background:"#facc15", color:"black", padding:14, borderRadius:10}}><div style={{fontSize:11, fontWeight:700}}>TODAY PROFIT (BIG)</div><div style={{fontSize:26, fontWeight:900, marginTop:4}}>KES {projectedProfitToday.toLocaleString()}</div><div style={{fontSize:11, marginTop:4}}>{cart.length>0? `After this cart: ${projectedProfitToday.toLocaleString()}` : "Total in pocket today"}</div></div>
+                </div>
+              )}
+
+              {calendarView==="week" && (
+                <div style={{marginTop:12}}>
+                  <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10}}>
+                    <div style={{background:"#facc15", color:"black", padding:12, borderRadius:8}}><div style={{fontSize:11}}>LAST 7 DAYS SALES</div><div style={{fontSize:22, fontWeight:900}}>KES {weekSales.toLocaleString()}</div></div>
+                    <div style={{background:"#fff", color:"black", padding:12, borderRadius:8}}><div style={{fontSize:11}}>LAST 7 DAYS PROFIT</div><div style={{fontSize:22, fontWeight:900}}>KES {weekProfit.toLocaleString()}</div></div>
+                  </div>
+                  <div style={{display:"grid", gridTemplateColumns:"repeat(7, 1fr)", gap:6}}>
+                    {last7.map(d=>(
+                      <div key={d.key} style={{background:d.key===todayKey?"#facc15":"#111", color:d.key===todayKey?"black":"#facc15", padding:8, borderRadius:8, border:"1px solid #333", textAlign:"center"}}>
+                        <div style={{fontSize:10, fontWeight:700}}>{d.date.toLocaleDateString('en-KE', {weekday:'short'})}</div>
+                        <div style={{fontSize:9}}>{d.key.slice(5)}</div>
+                        <div style={{fontSize:12, fontWeight:800, marginTop:4}}>{d.data? `KES ${d.data.profit.toLocaleString()}` : "KES 0"}</div>
+                        <div style={{fontSize:9}}>{d.data? `${d.data.count} sales` : "no sales"}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {calendarView==="month" && (
+                <div style={{marginTop:12}}>
+                  <div style={{background:"linear-gradient(135deg,#facc15,#f59e0b)", color:"black", padding:16, borderRadius:12, display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10}}>
+                    <div><div style={{fontSize:11, fontWeight:700}}>MONTH: {todayKey.slice(0,7)}</div><div style={{fontSize:24, fontWeight:900}}>KES {month.mSales.toLocaleString()}</div><div style={{fontSize:11}}>Total Sales</div></div>
+                    <div><div style={{fontSize:11, fontWeight:700}}>TOTAL PROFIT</div><div style={{fontSize:24, fontWeight:900}}>KES {month.mProfit.toLocaleString()}</div><div style={{fontSize:11}}>Grand Total This Month</div></div>
+                    <div><div style={{fontSize:11, fontWeight:700}}>DAYS WORKED</div><div style={{fontSize:24, fontWeight:900}}>{month.entries.length || 1}</div><div style={{fontSize:11}}>Days with sales</div></div>
+                  </div>
+                  <div style={{marginTop:10, maxHeight:200, overflowY:"auto", background:"#111", borderRadius:8, padding:8}}>
+                    {Object.entries(history).sort().reverse().slice(0,31).map(([k,v])=>(
+                      <div key={k} style={{display:"flex", justifyContent:"space-between", padding:"6px 0", borderBottom:"1px solid #222", fontSize:12}}>
+                        <span>{k} {k===todayKey?"(Today)": k===yesterdayKey?"(Yesterday)":""}</span><span>Sales {v.sales.toLocaleString()}</span><span style={{color:"#4ade80", fontWeight:700}}>Profit {v.profit.toLocaleString()}</span>
+                      </div>
+                    ))}
+                    {Object.keys(history).length===0 && <div style={{fontSize:12, opacity:0.6}}>No history yet - sales will appear here daily</div>}
+                  </div>
+                </div>
+              )}
+
+              <button onClick={()=>{setShowProfit(false); setPin("");}} style={{background:"#facc15", color:"black", padding:"8px 16px", borderRadius:8, fontWeight:800, border:"none", marginTop:12}}>Lock 🔒</button>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="no-print" style={{display:"grid", gridTemplateColumns:"2.2fr 1fr", gap:12}}>
         <div style={{background:"white", borderRadius:12, padding:10}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={`Search ${items.length} items...`} style={{width:"100%", padding:12, borderRadius:8, border:"2px solid #e5e7eb", marginBottom:10}}/><div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, maxHeight:"75vh", overflowY:"auto"}}>{filtered.map(item=>(<div key={item.id} style={{display:"flex", justifyContent:"space-between", alignItems:"center", padding:10, border:"1px solid #eee", borderRadius:10}}><div style={{flex:1}}><div style={{fontWeight:700, fontSize:12}}>{item.name}</div><div style={{fontSize:10, color:"#666"}}>{item.category} • Stock {item.stock} • KES {item.sell}</div></div><button onClick={()=>addToCart(item)} style={{background:"#facc15", border:"none", padding:"6px 10px", borderRadius:8, fontWeight:800, fontSize:11, cursor:"pointer"}}>+</button></div>))}</div></div>
         <div style={{background:"white", borderRadius:12, padding:12, height:"fit-content", position:"sticky", top:10}}>
           <h3 style={{marginTop:0}}>Cart - Bargain Allowed</h3>
           {cart.map(c=>(<div key={c.id} style={{borderBottom:"1px solid #eee", padding:"6px 0"}}><div style={{display:"flex", justifyContent:"space-between", fontSize:12}}><span>{c.name.slice(0,20)} x{c.qty}</span><button onClick={()=>setCart(prev=>prev.filter(p=>p.id!==c.id))} style={{background:"#fee", border:"none", borderRadius:4, fontSize:10}}>X</button></div><div style={{display:"flex", gap:6, marginTop:4, alignItems:"center"}}><span style={{fontSize:11}}>Price:</span><input type="number" value={getSellPrice(c)} onChange={e=>updateCartPrice(c.id, parseInt(e.target.value)||0)} style={{width:90, padding:4, borderRadius:6, border:"1px solid #000", fontWeight:800}}/><span style={{fontSize:12, fontWeight:800}}>= {getSellPrice(c)*c.qty}</span></div></div>))}
-          {cart.length===0 && <div style={{fontSize:12, color:"#888"}}>Cart empty - add items</div>}
+          {cart.length===0 && <div style={{fontSize:12, color:"#888"}}>Cart empty</div>}
           <h2 style={{margin:"10px 0 4px 0"}}>Total: KES {totalSell.toLocaleString()}</h2>
-          <div style={{fontSize:11, background:"#fef9c3", padding:6, borderRadius:6, marginBottom:8}}>Cart Profit: KES {totalProfit.toLocaleString()} - Customer can't see this</div>
+          <div style={{fontSize:11, background:"#fef9c3", padding:6, borderRadius:6, marginBottom:8}}>Cart Profit: KES {totalProfit.toLocaleString()}</div>
           <input value={mpesaPhone} onChange={e=>setMpesaPhone(e.target.value)} placeholder="07xx M-Pesa / empty=CASH" style={{width:"100%", padding:11, borderRadius:8, border:"2px solid black", margin:"8px 0"}}/>
           <button disabled={loading} onClick={handleSale} style={{width:"100%", background: loading?"#9ca3af":"#000", color:"white", border:"none", padding:14, borderRadius:10, fontWeight:900, cursor:"pointer"}}>{loading?"⏳...":"LIPA NA M-PESA / CASH"}</button>
           <button onClick={()=>setCart([])} style={{width:"100%", marginTop:6, background:"#f3f4f6", border:"none", padding:9, borderRadius:8, cursor:"pointer"}}>Clear</button>
         </div>
       </div>
 
-      {receipt && (<div className="no-print" style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", padding:20, zIndex:9999}}><div style={{background:"white", padding:18, borderRadius:12, maxWidth:360, width:"100%", fontFamily:"monospace"}}><h3 style={{textAlign:"center", margin:0}}>MUMIAS HARDWARE</h3><p style={{textAlign:"center", fontSize:12, margin:"4px 0"}}>{receipt.id}<br/>{receipt.date}<br/>{receipt.method} - {receipt.phone}</p><hr/>{receipt.cart.map((c:any)=>(<div key={c.id} style={{display:"flex", justifyContent:"space-between", fontSize:11}}><span>{c.name.slice(0,25)} x{c.qty}</span><span>KES {c.sell*c.qty}</span></div>))}<hr/><div style={{display:"flex", justifyContent:"space-between", fontWeight:900, fontSize:14}}><span>TOTAL</span><span>KES {receipt.total.toLocaleString()}</span></div><p style={{textAlign:"center", fontSize:11, marginTop:10}}>Asante sana! Karibu tena!</p><button onClick={()=>window.print()} style={{width:"100%", background:"black", color:"white", padding:12, borderRadius:8, marginTop:10, border:"none", fontWeight:800}}>🖨️ PRINT RECEIPT</button><button onClick={closeReceipt} style={{width:"100%", background:"#2563eb", color:"white", padding:10, borderRadius:8, marginTop:6, border:"none"}}>New Sale</button></div></div>)}
+      {receipt && (<div className="no-print" style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", padding:20, zIndex:9999}}><div style={{background:"white", padding:18, borderRadius:12, maxWidth:360, width:"100%", fontFamily:"monospace"}}><h3 style={{textAlign:"center", margin:0}}>MUMIAS HARDWARE</h3><p style={{textAlign:"center", fontSize:12, margin:"4px 0"}}>{receipt.id}<br/>{receipt.date}<br/>{receipt.method} - {receipt.phone}</p><hr/>{receipt.cart.map((c:any)=>(<div key={c.id} style={{display:"flex", justifyContent:"space-between", fontSize:11}}><span>{c.name.slice(0,25)} x{c.qty}</span><span>KES {c.sell*c.qty}</span></div>))}<hr/><div style={{display:"flex", justifyContent:"space-between", fontWeight:900, fontSize:14}}><span>TOTAL</span><span>KES {receipt.total.toLocaleString()}</span></div><p style={{textAlign:"center", fontSize:11, marginTop:10}}>Asante sana! Karibu tena!</p><button onClick={()=>window.print()} style={{width:"100%", background:"black", color:"white", padding:12, borderRadius:8, marginTop:10, border:"none", fontWeight:800}}>🖨️ PRINT</button><button onClick={closeReceipt} style={{width:"100%", background:"#2563eb", color:"white", padding:10, borderRadius:8, marginTop:6, border:"none"}}>New Sale</button></div></div>)}
     </main>
   );
 }
