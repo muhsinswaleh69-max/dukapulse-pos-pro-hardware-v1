@@ -99,8 +99,10 @@ export default function Page() {
   const [paidCode, setPaidCode] = useState("");
   const [paidAmount, setPaidAmount] = useState(0);
   const [loginInput, setLoginInput] = useState("");
+  // RESTOCK FREEDOM STATES
+  const [isOwnerMode, setIsOwnerMode] = useState(false);
+  const [restockInputs, setRestockInputs] = useState<Record<number, string>>({});
 
-  // --- MULTI-SHOP LOGIN ---
   useEffect(()=>{
     const savedShop = localStorage.getItem("dukapulse_current_shop");
     if(savedShop){ setShopId(savedShop); setShopName(savedShop); }
@@ -157,10 +159,21 @@ export default function Page() {
     }
   };
 
+  // === OWNER RESTOCK FUNCTION - FREEDOM ===
+  const handleRestock = (id: number) => {
+    const addStr = restockInputs[id] || "0";
+    const addQty = parseInt(addStr);
+    if(!addQty || addQty <=0) return alert("Enter quantity to add e.g. 50");
+    const newItems = items.map(it => it.id===id? {...it, stock: it.stock + addQty} : it);
+    saveStock(newItems);
+    setRestockInputs(prev => ({...prev, [id]: ""}));
+    alert(`✅ RESTOCKED! Added ${addQty}. New stock updated!`);
+  };
+
   const categories = ["All",...Array.from(new Set(items.map(i=>i.category)))];
   const filtered = items.filter(i => i.name.toLowerCase().includes(search.toLowerCase()) && (category==="All" || i.category===category));
   const addToCart = (item: Item) => {
-    if(item.stock<=0) return alert("Out of stock");
+    if(item.stock<=0) return alert("Out of stock - please RESTOCK!");
     setCart(prev => {
       const f = prev.find(p=>p.id===item.id);
       if(f) return prev.map(p=>p.id===item.id?{...p, qty:p.qty+1}:p);
@@ -277,9 +290,14 @@ export default function Page() {
       <div className="no-print" style={{background:"linear-gradient(135deg,#000,#2563eb)", color:"white", padding:16, borderRadius:14, marginBottom:12}}>
         <div style={{display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:10}}>
           <div><h1 style={{margin:0, fontSize:18, fontWeight:900}}>DUKAPULSE - {shopName.toUpperCase()} - SHOP ID: {shopId}</h1><p style={{margin:"4px 0 0 0", fontSize:12, opacity:0.9}}>{items.length} Items ● Today Sales KES {salesToday.toLocaleString()} ● Profit KES {profitToday.toLocaleString()} ● {status}</p></div>
-          <div style={{display:"flex", gap:8}}><button onClick={handleLogout} style={{background:"white", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>Logout</button><button onClick={()=>setShowProfit(true)} style={{background:"#000", color:"#facc15", border:"1px solid #facc15", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>🔒 MY PROFIT</button></div>
+          <div style={{display:"flex", gap:8}}>
+            <button onClick={()=>setIsOwnerMode(!isOwnerMode)} style={{background: isOwnerMode? "#facc15" : "white", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>{isOwnerMode? "🛒 Selling Mode" : "📦 Owner Restock Mode"}</button>
+            <button onClick={handleLogout} style={{background:"white", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>Logout</button>
+            <button onClick={()=>setShowProfit(true)} style={{background:"#000", color:"#facc15", border:"1px solid #facc15", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>🔒 MY PROFIT</button>
+          </div>
         </div>
         <div style={{display:"flex", gap:6, marginTop:10, flexWrap:"wrap"}}>{["All",...Array.from(new Set(items.map(i=>i.category)))].map(cat=>(<button key={cat} onClick={()=>setCategory(cat)} style={{background: category===cat?"white":"rgba(255,255,255,0.2)", color: category===cat?"black":"white", border:"none", padding:"6px 12px", borderRadius:20, fontSize:11, fontWeight:700, cursor:"pointer"}}>{cat}</button>))}</div>
+        {isOwnerMode && <div style={{marginTop:10, background:"#facc15", color:"black", padding:"8px 12px", borderRadius:8, fontSize:12, fontWeight:700}}>📦 OWNER MODE ACTIVE: Owners can now restock their own products at fingertips! Type qty + click RESTOCK.</div>}
       </div>
 
       {showProfit && (
@@ -336,7 +354,23 @@ export default function Page() {
       )}
 
       <div className="no-print" style={{display:"grid", gridTemplateColumns:"2.2fr 1fr", gap:12}}>
-        <div style={{background:"white", borderRadius:12, padding:10}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={`Search ${items.length} items in ${shopName}...`} style={{width:"100%", padding:12, borderRadius:8, border:"2px solid #e5e7eb", marginBottom:10}}/><div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, maxHeight:"75vh", overflowY:"auto"}}>{filtered.map(item=>(<div key={item.id} style={{display:"flex", justifyContent:"space-between", alignItems:"center", padding:10, border:"1px solid #eee", borderRadius:10}}><div style={{flex:1}}><div style={{fontWeight:700, fontSize:12}}>{item.name}</div><div style={{fontSize:10, color:"#666"}}>{item.category} • Stock {item.stock} • KES {item.sell}</div></div><button onClick={()=>addToCart(item)} style={{background:"#facc15", border:"none", padding:"6px 10px", borderRadius:8, fontWeight:800, fontSize:11, cursor:"pointer"}}>+</button></div>))}</div></div>
+        <div style={{background:"white", borderRadius:12, padding:10}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={`Search ${items.length} items in ${shopName}...`} style={{width:"100%", padding:12, borderRadius:8, border:"2px solid #e5e7eb", marginBottom:10}}/><div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, maxHeight:"75vh", overflowY:"auto"}}>
+          {filtered.map(item=>(
+            <div key={item.id} style={{display:"flex", justifyContent:"space-between", alignItems:"center", padding:10, border: item.stock < 10? "2px solid red" : "1px solid #eee", borderRadius:10, background: item.stock < 10? "#fef2f2" : "white"}}>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:700, fontSize:12}}>{item.name} {item.stock < 10 && "⚠️ LOW!"}</div>
+                <div style={{fontSize:10, color: item.stock < 10? "red" : "#666", fontWeight: item.stock < 10? 800 : 400}}>{item.category} • Stock {item.stock} • KES {item.sell}</div>
+                {isOwnerMode && (
+                  <div style={{display:"flex", gap:4, marginTop:6}}>
+                    <input type="number" value={restockInputs[item.id] || ""} onChange={e=>setRestockInputs({...restockInputs, [item.id]: e.target.value})} placeholder="+qty" style={{width:60, padding:4, border:"1px solid black", borderRadius:6, fontSize:11}}/>
+                    <button onClick={()=>handleRestock(item.id)} style={{background:"#16a34a", color:"white", border:"none", padding:"4px 8px", borderRadius:6, fontSize:10, fontWeight:800, cursor:"pointer"}}>RESTOCK</button>
+                  </div>
+                )}
+              </div>
+              {!isOwnerMode && <button onClick={()=>addToCart(item)} style={{background:"#facc15", border:"none", padding:"6px 10px", borderRadius:8, fontWeight:800, fontSize:11, cursor:"pointer"}}>+</button>}
+            </div>
+          ))}
+        </div></div>
         <div style={{background:"white", borderRadius:12, padding:12, height:"fit-content", position:"sticky", top:10}}>
           <h3 style={{marginTop:0}}>Cart - {shopName}</h3>
           {cart.map(c=>(<div key={c.id} style={{borderBottom:"1px solid #eee", padding:"6px 0"}}><div style={{display:"flex", justifyContent:"space-between", fontSize:12}}><span>{c.name.slice(0,20)} x{c.qty}</span><button onClick={()=>setCart(prev=>prev.filter(p=>p.id!==c.id))} style={{background:"#fee", border:"none", borderRadius:4, fontSize:10}}>X</button></div><div style={{display:"flex", gap:6, marginTop:4, alignItems:"center"}}><span style={{fontSize:11}}>Price:</span><input type="number" value={getSellPrice(c)} onChange={e=>updateCartPrice(c.id, parseInt(e.target.value)||0)} style={{width:90, padding:4, borderRadius:6, border:"1px solid #000", fontWeight:800}}/><span style={{fontSize:12, fontWeight:800}}>= {getSellPrice(c)*c.qty}</span></div></div>))}
