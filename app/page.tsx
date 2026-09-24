@@ -103,6 +103,8 @@ export default function Page() {
   const [restockInputs, setRestockInputs] = useState<Record<number, string>>({});
   const [showAddForm, setShowAddForm] = useState(false);
   const [newP, setNewP] = useState({name:"", buy:"", sell:"", stock:"", category:"Cement"});
+  const [ownerPinPrompt, setOwnerPinPrompt] = useState(false);
+  const [ownerPinInput, setOwnerPinInput] = useState("");
 
   useEffect(()=>{
     const savedShop = localStorage.getItem("dukapulse_current_shop");
@@ -160,6 +162,25 @@ export default function Page() {
     }
   };
 
+  // 🔒 LOCKED OWNER MODE WITH PIN
+  const tryEnterOwnerMode = () => {
+    if(isOwnerMode){
+      setIsOwnerMode(false);
+      return;
+    }
+    setOwnerPinPrompt(true);
+  };
+  const confirmOwnerPin = () => {
+    if(ownerPinInput === "1234"){
+      setIsOwnerMode(true);
+      setOwnerPinPrompt(false);
+      setOwnerPinInput("");
+    } else {
+      alert("Wrong PIN! Only owner can restock. PIN is 1234");
+      setOwnerPinInput("");
+    }
+  };
+
   const handleRestock = (id: number) => {
     const addStr = restockInputs[id] || "0";
     const addQty = parseInt(addStr);
@@ -190,7 +211,7 @@ export default function Page() {
   const categories = ["All",...Array.from(new Set(items.map(i=>i.category)))];
   const filtered = items.filter(i => i.name.toLowerCase().includes(search.toLowerCase()) && (category==="All" || i.category===category));
   const addToCart = (item: Item) => {
-    if(item.stock<=0) return alert("Out of stock - please RESTOCK!");
+    if(item.stock<=0) return alert("Out of stock - please RESTOCK! Ask owner.");
     setCart(prev => {
       const f = prev.find(p=>p.id===item.id);
       if(f) return prev.map(p=>p.id===item.id?{...p, qty:p.qty+1}:p);
@@ -296,7 +317,6 @@ export default function Page() {
           <p style={{fontSize:12, color:"#666", marginTop:6}}>Each hardware has own isolated data. No mixing.</p>
           <input value={loginInput} onChange={e=>setLoginInput(e.target.value)} placeholder="Enter Shop Name e.g. Mumias Hardware" style={{width:"100%", padding:14, borderRadius:10, border:"2px solid black", marginTop:20, fontWeight:700}}/>
           <button onClick={handleLogin} style={{width:"100%", background:"black", color:"white", padding:14, borderRadius:10, fontWeight:900, marginTop:12, border:"none", cursor:"pointer"}}>OPEN MY SHOP →</button>
-          <p style={{fontSize:11, color:"#888", marginTop:12}}>Demo: Try "Mumias Hardware" then logout and try "Bungoma Hardware" - stock & sales will be different! This is how 500 shops stay separate.</p>
         </div>
       </main>
     )
@@ -308,14 +328,28 @@ export default function Page() {
         <div style={{display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:10}}>
           <div><h1 style={{margin:0, fontSize:18, fontWeight:900}}>DUKAPULSE - {shopName.toUpperCase()} - SHOP ID: {shopId}</h1><p style={{margin:"4px 0 0 0", fontSize:12, opacity:0.9}}>{items.length} Items ● Today Sales KES {salesToday.toLocaleString()} ● Profit KES {profitToday.toLocaleString()} ● {status}</p></div>
           <div style={{display:"flex", gap:8}}>
-            <button onClick={()=>setIsOwnerMode(!isOwnerMode)} style={{background: isOwnerMode? "#facc15" : "white", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>{isOwnerMode? "🛒 Selling Mode" : "📦 Owner Restock Mode"}</button>
+            <button onClick={tryEnterOwnerMode} style={{background: isOwnerMode? "#facc15" : "white", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>{isOwnerMode? "🛒 Selling Mode (Owner)" : "🔒 Owner Restock Mode"}</button>
             <button onClick={handleLogout} style={{background:"white", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>Logout</button>
             <button onClick={()=>setShowProfit(true)} style={{background:"#000", color:"#facc15", border:"1px solid #facc15", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>🔒 MY PROFIT</button>
           </div>
         </div>
         <div style={{display:"flex", gap:6, marginTop:10, flexWrap:"wrap"}}>{["All",...Array.from(new Set(items.map(i=>i.category)))].map(cat=>(<button key={cat} onClick={()=>setCategory(cat)} style={{background: category===cat?"white":"rgba(255,255,255,0.2)", color: category===cat?"black":"white", border:"none", padding:"6px 12px", borderRadius:20, fontSize:11, fontWeight:700, cursor:"pointer"}}>{cat}</button>))}</div>
-        {isOwnerMode && <div style={{marginTop:10, background:"#facc15", color:"black", padding:"8px 12px", borderRadius:8, fontSize:12, fontWeight:700, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8}}><span>📦 OWNER MODE ACTIVE: Restock + Add New Products at fingertips!</span><button onClick={()=>setShowAddForm(true)} style={{background:"black", color:"#facc15", border:"none", padding:"6px 14px", borderRadius:20, fontWeight:900, fontSize:12, cursor:"pointer"}}>➕ ADD NEW PRODUCT</button></div>}
+        {isOwnerMode && <div style={{marginTop:10, background:"#facc15", color:"black", padding:"8px 12px", borderRadius:8, fontSize:12, fontWeight:700, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8}}><span>🔓 OWNER MODE UNLOCKED: Restock + Add New Products!</span><button onClick={()=>setShowAddForm(true)} style={{background:"black", color:"#facc15", border:"none", padding:"6px 14px", borderRadius:20, fontWeight:900, fontSize:12, cursor:"pointer"}}>➕ ADD NEW PRODUCT</button></div>}
       </div>
+
+      {ownerPinPrompt && (
+        <div className="no-print" style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9998, padding:20}}>
+          <div style={{background:"white", padding:20, borderRadius:12, maxWidth:340, width:"100%"}}>
+            <h3 style={{margin:"0 0 10px 0"}}>🔒 Owner PIN Required</h3>
+            <p style={{fontSize:12, color:"#666"}}>Enter owner PIN to access restock. Workers cannot access.</p>
+            <input type="password" value={ownerPinInput} onChange={e=>setOwnerPinInput(e.target.value)} placeholder="PIN is 1234" style={{width:"100%", padding:12, borderRadius:8, border:"2px solid black", marginTop:10}}/>
+            <div style={{display:"flex", gap:8, marginTop:12}}>
+              <button onClick={confirmOwnerPin} style={{flex:1, background:"black", color:"white", padding:12, borderRadius:8, fontWeight:800, border:"none", cursor:"pointer"}}>UNLOCK OWNER MODE</button>
+              <button onClick={()=>{setOwnerPinPrompt(false); setOwnerPinInput("");}} style={{padding:12, borderRadius:8, border:"1px solid #ccc", background:"white", cursor:"pointer"}}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isOwnerMode && showAddForm && (
         <div className="no-print" style={{background:"white", padding:16, borderRadius:12, marginBottom:12, border:"2px solid black"}}>
@@ -353,7 +387,7 @@ export default function Page() {
               {calendarView==="today" && (
                 <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginTop:12}}>
                   <div style={{background:"#111", padding:12, borderRadius:8, border:"1px solid #333"}}><div style={{fontSize:11, opacity:0.7}}>THIS CART</div><div style={{fontSize:13, marginTop:6}}>Sales: KES {totalSell.toLocaleString()}</div><div style={{fontSize:12}}>Cost: KES {totalBuy.toLocaleString()}</div><div style={{fontSize:13, color:"#4ade80", marginTop:6, fontWeight:800}}>Profit: KES {totalProfit.toLocaleString()}</div></div>
-                  <div style={{background:"#111", padding:12, borderRadius:8, border:"1px solid #333"}}><div style={{fontSize:11, opacity:0.7}}>TODAY SUMMARY</div><div style={{fontSize:13, marginTop:6}}>Sales Today: KES {salesToday.toLocaleString()}</div><div style={{fontSize:12}}>Profit Earned: KES {profitToday.toLocaleString()}</div><div style={{fontSize:11, marginTop:6}}>Yesterday: KES {(history[yesterdayKey]?.profit||0).toLocaleString()}</div></div>
+                  <div style={{background:"#111", padding:12, borderRadius:8, border:"1px solid #333"}}><div style={{fontSize:11, opacity:0.7}}>TODAY SUMMARY</div><div style={{fontSize:13, marginTop:6}}>Sales Today: KES {salesToday.toLocaleString()}</div><div style={{fontSize:12}}>Profit Earned: KES {profitToday.toLocaleString()}</div></div>
                   <div style={{background:"#facc15", color:"black", padding:14, borderRadius:10}}><div style={{fontSize:11, fontWeight:700}}>TODAY PROFIT (BIG)</div><div style={{fontSize:26, fontWeight:900, marginTop:4}}>KES {projectedProfitToday.toLocaleString()}</div></div>
                 </div>
               )}
