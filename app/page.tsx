@@ -85,14 +85,19 @@ export default function Page() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
-  const [mpesaCode, setMpesaCode] = useState("");
+  const [mpesaPhone, setMpesaPhone] = useState("");
   const [receipt, setReceipt] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState("");
   const [salesToday, setSalesToday] = useState(0);
   const [profitToday, setProfitToday] = useState(0);
   const [history, setHistory] = useState<Record<string, DailyRecord>>({});
   const [showProfit, setShowProfit] = useState(false);
   const [calendarView, setCalendarView] = useState<"today"|"week"|"month">("today");
   const [pin, setPin] = useState("");
+  const [showPaid, setShowPaid] = useState(false);
+  const [paidCode, setPaidCode] = useState("");
+  const [paidAmount, setPaidAmount] = useState(0);
   const [loginInput, setLoginInput] = useState("");
   const [isOwnerMode, setIsOwnerMode] = useState(false);
   const [restockInputs, setRestockInputs] = useState<Record<number, string>>({});
@@ -115,13 +120,13 @@ export default function Page() {
 
   useEffect(()=>{
     if(!shopId) return;
-    const stockKey = `dukapulse_${shopId}_stock_v8`;
-    const salesKey = `dukapulse_${shopId}_sales_today_v8`;
-    const profitKey = `dukapulse_${shopId}_profit_today_v8`;
-    const histKey = `dukapulse_${shopId}_history_v8`;
-    const dateKey = `dukapulse_${shopId}_last_date_v8`;
-    const pinKey = `dukapulse_${shopId}_owner_pin_v8`;
-    const expiryKey = `dukapulse_${shopId}_expiry_v8`;
+    const stockKey = `dukapulse_${shopId}_stock_v9`;
+    const salesKey = `dukapulse_${shopId}_sales_today_v9`;
+    const profitKey = `dukapulse_${shopId}_profit_today_v9`;
+    const histKey = `dukapulse_${shopId}_history_v9`;
+    const dateKey = `dukapulse_${shopId}_last_date_v9`;
+    const pinKey = `dukapulse_${shopId}_owner_pin_v9`;
+    const expiryKey = `dukapulse_${shopId}_expiry_v9`;
     const saved = localStorage.getItem(stockKey);
     const savedSales = localStorage.getItem(salesKey);
     const savedProfit = localStorage.getItem(profitKey);
@@ -154,17 +159,17 @@ export default function Page() {
   const saveStock = (newItems: Item[]) => {
     if(!shopId) return;
     setItems(newItems);
-    localStorage.setItem(`dukapulse_${shopId}_stock_v8`, JSON.stringify(newItems));
+    localStorage.setItem(`dukapulse_${shopId}_stock_v9`, JSON.stringify(newItems));
   };
   const saveHistory = (newHist: Record<string, DailyRecord>) => {
     if(!shopId) return;
     setHistory(newHist);
-    localStorage.setItem(`dukapulse_${shopId}_history_v8`, JSON.stringify(newHist));
+    localStorage.setItem(`dukapulse_${shopId}_history_v9`, JSON.stringify(newHist));
   };
   const saveOwnerPin = (newPin: string) => {
     if(!shopId) return;
     setOwnerPin(newPin);
-    localStorage.setItem(`dukapulse_${shopId}_owner_pin_v8`, newPin);
+    localStorage.setItem(`dukapulse_${shopId}_owner_pin_v9`, newPin);
   };
 
   const handleLogin = () => {
@@ -180,7 +185,6 @@ export default function Page() {
       setShopId(null); setCart([]); setShopName(""); setIsOwnerMode(false);
     }
   };
-
   const tryEnterOwnerMode = () => {
     if(isOwnerMode){ setIsOwnerMode(false); return; }
     setOwnerPinPrompt(true);
@@ -202,7 +206,7 @@ export default function Page() {
     saveOwnerPin(changePinData.newPin);
     setChangePinData({oldPin:"", newPin:"", confirmPin:""});
     setShowChangePin(false);
-    alert(`✅ PIN CHANGED! New PIN is ${changePinData.newPin}. Remember it!`);
+    alert(`✅ PIN CHANGED! New PIN is ${changePinData.newPin}.`);
   };
   const handleRestock = (id: number) => {
     const addStr = restockInputs[id] || "0";
@@ -251,9 +255,39 @@ export default function Page() {
     else { mSales = entries.reduce((s,[,v])=>s+v.sales,0); mProfit = entries.reduce((s,[,v])=>s+v.profit,0); if(!entries.find(([k])=>k===todayKey)){ mSales+=salesToday; mProfit+=profitToday; } }
     return {mSales, mProfit, entries};
   };
-  const completeSale = (method: string, code: string, amount: number) => {
+
+  const handleSale = async () => {
+    if(cart.length===0) return alert("Cart empty!");
+    if(!mpesaPhone || mpesaPhone.length < 10){
+      if(!confirm("Cash sale KES "+totalSell+"?")) return;
+      completeSale("CASH", "CASH", totalSell);
+      return;
+    }
+    setLoading(true);
+    setStatus("STK Push to "+mpesaPhone+"...");
+    try{
+      const resp = await fetch("/api/mpesa", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({phone: mpesaPhone, amount: totalSell, shopId}) });
+      const data = await resp.json();
+      if(!resp.ok) throw new Error(data.error || "STK failed");
+      const checkoutId = data.CheckoutRequestID;
+      setStatus("✅ STK Sent! Tell customer to enter PIN...");
+      for(let i=0;i<20;i++){
+        await new Promise(r=>setTimeout(r,3000));
+        setStatus(`⏳ Waiting M-Pesa... ${i+1}/20`);
+        const poll = await fetch('/api/mpesa/callback');
+        const tx = await poll.json();
+        if(tx?.mpesaCode && tx?.checkoutId === checkoutId){
+          setPaidCode(tx.mpesaCode); setPaidAmount(tx.amount); setShowPaid(true); setLoading(false); setStatus("✅ PAYMENT SUCCESSFUL!");
+          setTimeout(()=>{ setShowPaid(false); completeSale("M-PESA", tx.mpesaCode, tx.amount); }, 4000);
+          return;
+        }
+      }
+      setStatus("⚠️ Not confirmed yet. Check SMS."); completeSale("M-PESA", "PENDING - CHECK SMS", totalSell); setLoading(false);
+    }catch(e:any){ alert(e.message); setLoading(false); setStatus("Failed"); }
+  };
+
+  const completeSale = (method: string, mpesaCode: string, amount: number) => {
     if(!shopId) return;
-    if(cart.length===0) return alert("Cart empty");
     let newItems=[...items];
     cart.forEach(c=>{ newItems=newItems.map(it=> it.id===c.id? {...it, stock: it.stock - c.qty} : it); });
     saveStock(newItems);
@@ -262,14 +296,14 @@ export default function Page() {
     if(!newHist[key]) newHist[key] = {sales:0, profit:0, count:0};
     newHist[key] = {sales: newHist[key].sales + totalSell, profit: newHist[key].profit + totalProfit, count: newHist[key].count + 1};
     saveHistory(newHist);
-    const salesKey = `dukapulse_${shopId}_sales_today_v8`;
-    const profitKey = `dukapulse_${shopId}_profit_today_v8`;
+    const salesKey = `dukapulse_${shopId}_sales_today_v9`;
+    const profitKey = `dukapulse_${shopId}_profit_today_v9`;
     setSalesToday(s=>{const ns=s+totalSell; localStorage.setItem(salesKey, String(ns)); return ns;});
     setProfitToday(p=>{const np=p+totalProfit; localStorage.setItem(profitKey, String(np)); return np;});
-    const rec={id:"RCPT-"+Date.now().toString().slice(-6), date:new Date().toLocaleString(), cart:cart.map(c=>({...c, sell:getSellPrice(c)})), total:amount, method, code, shopId, shopName, paybill:"714888", account:"467108"};
-    setReceipt(rec);
+    const rec={id:"RCPT-"+Date.now().toString().slice(-6), date:new Date().toLocaleString(), cart:cart.map(c=>({...c, sell:getSellPrice(c)})), total:amount, phone:mpesaPhone||"CASH", method, mpesaCode, shopId, shopName};
+    setReceipt(rec); setLoading(false); setStatus("✅ Paid!");
   };
-  const closeReceipt=()=>{setReceipt(null); setCart([]); setMpesaCode("");};
+  const closeReceipt=()=>{setReceipt(null); setCart([]); setMpesaPhone(""); setStatus("");};
   const last7 = getLast7Days();
   const month = getThisMonth();
   const weekSales = last7.reduce((s,d)=> s + (d.data?.sales||0), 0);
@@ -277,10 +311,9 @@ export default function Page() {
 
   if(!shopId){
     return (
-      <main style={{fontFamily:"system-ui", minHeight:"100vh", background:"linear-gradient(135deg,#000,#7a1e2d)", display:"flex", alignItems:"center", justifyContent:"center", padding:20}}>
+      <main style={{fontFamily:"system-ui", minHeight:"100vh", background:"linear-gradient(135deg,#000,#2563eb)", display:"flex", alignItems:"center", justifyContent:"center", padding:20}}>
         <div style={{background:"white", padding:30, borderRadius:16, maxWidth:420, width:"100%", textAlign:"center"}}>
           <h1 style={{margin:0, fontWeight:900, fontSize:22}}>DUKAPULSE - LOGIN</h1>
-          <p style={{fontSize:11, color:"#7a1e2d", fontWeight:700, marginTop:4}}>PAYBILL 714888 • ACC 467108</p>
           <input value={loginInput} onChange={e=>setLoginInput(e.target.value)} placeholder="Enter Shop Name e.g. Mumias Hardware" style={{width:"100%", padding:14, borderRadius:10, border:"2px solid black", marginTop:20, fontWeight:700}}/>
           <button onClick={handleLogin} style={{width:"100%", background:"black", color:"white", padding:14, borderRadius:10, fontWeight:900, marginTop:12, border:"none", cursor:"pointer"}}>OPEN MY SHOP →</button>
         </div>
@@ -288,56 +321,59 @@ export default function Page() {
     )
   }
 
+  // *** LOOP BIZ ONLY FOR SUBSCRIPTION - NOT FOR CUSTOMER SALES ***
   if(isBlocked){
     return (
       <main style={{fontFamily:"system-ui", minHeight:"100vh", background:"#000", display:"flex", alignItems:"center", justifyContent:"center", padding:20}}>
         <div style={{background:"white", padding:22, borderRadius:16, maxWidth:420, width:"100%", textAlign:"center", border:"4px solid #7a1e2d"}}>
           <h1 style={{color:"#7a1e2d", fontSize:36, margin:0}}>🔒 LOCKED</h1>
-          <h2 style={{margin:"8px 0", fontSize:16}}>{shopName.toUpperCase()} - EXPIRED</h2>
-          <p style={{fontSize:12, color:"#666"}}>Expired: {expiry}<br/>Subscription required</p>
-          
+          <h2 style={{margin:"8px 0", fontSize:16}}>{shopName.toUpperCase()} - SUBSCRIPTION EXPIRED</h2>
+          <p style={{fontSize:12, color:"#666"}}>Expired: {expiry}<br/>Pay monthly fee to continue</p>
+
           <div style={{background:"#7a1e2d", borderRadius:12, padding:14, marginTop:14, textAlign:"left", color:"white"}}>
             <div style={{display:"flex", justifyContent:"space-between"}}>
               <span style={{fontWeight:900, fontSize:14, color:"#ff9aa2"}}>LOOP BIZ</span>
               <span style={{fontSize:9, background:"white", color:"#7a1e2d", padding:"2px 8px", borderRadius:20, fontWeight:800}}>PAY WITH LOOP</span>
             </div>
-            <div style={{fontSize:10, marginTop:4}}>M-PESA & AIRTEL MONEY PAYBILL</div>
+            <div style={{fontSize:10, marginTop:4}}>M-PESA & AIRTEL MONEY PAYBILL - MONTHLY SUBSCRIPTION</div>
             <div style={{fontSize:32, fontWeight:900, color:"#ff6b7a", letterSpacing:1}}>714888</div>
             <div style={{fontSize:11, fontWeight:700, marginTop:4}}>LOOP BIZ ACCOUNT NUMBER</div>
             <div style={{display:"flex", gap:4, marginTop:4}}>
               {["4","6","7","1","0","8"].map((d,i)=><div key={i} style={{background:"white", color:"#7a1e2d", width:30, height:30, display:"flex", alignItems:"center", justifyContent:"center", borderRadius:5, fontWeight:900}}>{d}</div>)}
             </div>
             <div style={{fontSize:11, marginTop:10, background:"rgba(255,255,255,0.12)", padding:8, borderRadius:8, lineHeight:1.4}}>
-              1. Go to M-Pesa → Lipa na M-Pesa → Paybill<br/>
+              <b>TO PAY MONTHLY SUBSCRIPTION:</b><br/>
+              1. M-Pesa → Lipa na M-Pesa → Paybill<br/>
               2. Business No: <b>714888</b><br/>
               3. Account No: <b>467108</b><br/>
               4. Amount: <b>1500</b><br/>
-              5. Enter PIN and send
+              5. PIN → Send
             </div>
-            <input value={subCodeInput} onChange={e=>setSubCodeInput(e.target.value)} placeholder="Enter M-Pesa CODE after paying e.g. QGH..." style={{width:"100%", padding:11, borderRadius:8, border:"2px solid #16a34a", marginTop:10, color:"black"}}/>
+            <input value={subCodeInput} onChange={e=>setSubCodeInput(e.target.value)} placeholder="Enter M-Pesa CODE after paying e.g. QGH8..." style={{width:"100%", padding:11, borderRadius:8, border:"2px solid #16a34a", marginTop:10, color:"black"}}/>
             <button onClick={()=>{
-              if(!subCodeInput || subCodeInput.length < 8) return alert("Enter valid M-Pesa CODE from confirmation SMS");
+              if(!subCodeInput || subCodeInput.length < 8) return alert("Enter valid M-Pesa CODE from SMS after paying to Paybill");
               const newDate = new Date(); newDate.setDate(newDate.getDate()+30);
               const newExpiry = newDate.toISOString().slice(0,10);
-              localStorage.setItem(`dukapulse_${shopId}_expiry_v8`, newExpiry);
-              localStorage.setItem(`dukapulse_${shopId}_last_payment_v8`, JSON.stringify({code: subCodeInput, date: new Date().toISOString(), amount:1500, paybill:"714888", acc:"467108"}));
-              setIsBlocked(false); setExpiry(newExpiry); setSubCodeInput(""); alert(`✅ PAYMENT ${subCodeInput} VERIFIED! Unlocked till ${newExpiry} - 30 DAYS`);
+              localStorage.setItem(`dukapulse_${shopId}_expiry_v9`, newExpiry);
+              localStorage.setItem(`dukapulse_${shopId}_last_payment_v9`, JSON.stringify({code: subCodeInput, date: new Date().toISOString(), amount:1500, paybill:"714888", acc:"467108"}));
+              setIsBlocked(false); setExpiry(newExpiry); setSubCodeInput(""); alert(`✅ LOOP BIZ CODE ${subCodeInput} ACCEPTED! Unlocked till ${newExpiry} - 30 DAYS`);
             }} style={{width:"100%", background:"#16a34a", color:"white", padding:12, borderRadius:8, fontWeight:900, border:"none", marginTop:8, cursor:"pointer"}}>
-              VERIFY & UNLOCK 30 DAYS
+              VERIFY LOOP BIZ PAYMENT & UNLOCK
             </button>
+            <div style={{fontSize:9, textAlign:"center", marginTop:6, opacity:0.8}}>Only pay to official Paybill 714888 Acc 467108</div>
           </div>
 
           <div style={{marginTop:12, borderTop:"1px solid #eee", paddingTop:8}}>
-            <p style={{fontSize:10, color:"#888"}}>Manual admin override (owner only)</p>
+            <p style={{fontSize:10, color:"#888"}}>Owner admin override</p>
             <div style={{display:"flex", gap:6, marginTop:4}}>
-              <input type="password" value={adminCode} onChange={e=>setAdminCode(e.target.value)} placeholder="Admin PIN ••••" style={{flex:1, padding:8, borderRadius:8, border:"1px solid #ccc"}}/>
+              <input type="password" value={adminCode} onChange={e=>setAdminCode(e.target.value)} placeholder="Admin code" style={{flex:1, padding:8, borderRadius:8, border:"1px solid #ccc"}}/>
               <button onClick={()=>{
                 if(adminCode==="MUMIASBOSS2026"){
                   const newDate = new Date(); newDate.setDate(newDate.getDate()+30);
                   const newExpiry = newDate.toISOString().slice(0,10);
-                  localStorage.setItem(`dukapulse_${shopId}_expiry_v8`, newExpiry);
+                  localStorage.setItem(`dukapulse_${shopId}_expiry_v9`, newExpiry);
                   setIsBlocked(false); setExpiry(newExpiry); setAdminCode(""); alert(`✅ MANUAL UNLOCK ${newExpiry}`);
-                } else { alert("Wrong admin!"); }
+                } else { alert("Wrong admin code!"); }
               }} style={{background:"#eee", border:"none", padding:"8px 12px", borderRadius:8, fontSize:11, fontWeight:700}}>Unlock</button>
             </div>
           </div>
@@ -349,17 +385,17 @@ export default function Page() {
 
   return (
     <main style={{fontFamily:"system-ui", padding:12, maxWidth:1300, margin:"0 auto", background:"#f5f7fb", minHeight:"100vh"}}>
-      <div className="no-print" style={{background:"linear-gradient(135deg,#000,#7a1e2d)", color:"white", padding:16, borderRadius:14, marginBottom:12}}>
+      <div className="no-print" style={{background:"linear-gradient(135deg,#000,#2563eb)", color:"white", padding:16, borderRadius:14, marginBottom:12}}>
         <div style={{display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:10}}>
-          <div><h1 style={{margin:0, fontSize:18, fontWeight:900}}>DUKAPULSE - {shopName.toUpperCase()}</h1><p style={{margin:"4px 0 0 0", fontSize:11, opacity:0.9}}>{items.length} Items ● Today KES {salesToday.toLocaleString()} ● Profit KES {profitToday.toLocaleString()} ● Exp {expiry}</p></div>
+          <div><h1 style={{margin:0, fontSize:18, fontWeight:900}}>DUKAPULSE - {shopName.toUpperCase()}</h1><p style={{margin:"4px 0 0 0", fontSize:11, opacity:0.9}}>{items.length} Items ● Today KES {salesToday.toLocaleString()} ● Profit KES {profitToday.toLocaleString()} ● Exp {expiry} ● {status}</p></div>
           <div style={{display:"flex", gap:8}}>
-            <button onClick={tryEnterOwnerMode} style={{background: isOwnerMode? "#ff9aa2" : "white", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>{isOwnerMode? "🛒 Selling Mode" : "🔒 Owner Restock"}</button>
+            <button onClick={tryEnterOwnerMode} style={{background: isOwnerMode? "#facc15" : "white", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>{isOwnerMode? "🛒 Selling Mode" : "🔒 Owner Restock"}</button>
             <button onClick={handleLogout} style={{background:"white", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>Logout</button>
-            <button onClick={()=>setShowProfit(true)} style={{background:"#000", color:"#ff9aa2", border:"1px solid #ff9aa2", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>🔒 MY PROFIT</button>
+            <button onClick={()=>setShowProfit(true)} style={{background:"#000", color:"#facc15", border:"1px solid #facc15", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>🔒 MY PROFIT</button>
           </div>
         </div>
         <div style={{display:"flex", gap:6, marginTop:10, flexWrap:"wrap"}}>{["All",...Array.from(new Set(items.map(i=>i.category)))].map(cat=>(<button key={cat} onClick={()=>setCategory(cat)} style={{background: category===cat?"white":"rgba(255,255,255,0.2)", color: category===cat?"black":"white", border:"none", padding:"6px 12px", borderRadius:20, fontSize:11, fontWeight:700, cursor:"pointer"}}>{cat}</button>))}</div>
-        {isOwnerMode && <div style={{marginTop:10, background:"#ff9aa2", color:"black", padding:"8px 12px", borderRadius:8, fontSize:12, fontWeight:700, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8}}><span>🔓 OWNER UNLOCKED - Exp {expiry}</span><div style={{display:"flex", gap:6}}><button onClick={()=>setShowAddForm(true)} style={{background:"black", color:"#ff9aa2", border:"none", padding:"6px 14px", borderRadius:20, fontWeight:900, fontSize:12, cursor:"pointer"}}>➕ ADD PRODUCT</button><button onClick={()=>setShowChangePin(true)} style={{background:"white", color:"black", border:"1px solid black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>🔑 Change PIN</button></div></div>}
+        {isOwnerMode && <div style={{marginTop:10, background:"#facc15", color:"black", padding:"8px 12px", borderRadius:8, fontSize:12, fontWeight:700, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8}}><span>🔓 OWNER UNLOCKED - Exp {expiry}</span><div style={{display:"flex", gap:6}}><button onClick={()=>setShowAddForm(true)} style={{background:"black", color:"#facc15", border:"none", padding:"6px 14px", borderRadius:20, fontWeight:900, fontSize:12, cursor:"pointer"}}>➕ ADD PRODUCT</button><button onClick={()=>setShowChangePin(true)} style={{background:"white", color:"black", border:"1px solid black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>🔑 Change PIN</button></div></div>}
       </div>
 
       {ownerPinPrompt && (
@@ -378,10 +414,10 @@ export default function Page() {
       {showChangePin && (
         <div className="no-print" style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999, padding:20}}>
           <div style={{background:"white", padding:20, borderRadius:12, maxWidth:360, width:"100%"}}>
-            <h3 style={{margin:"0 0 10px 0"}}>🔑 Change Owner PIN - {shopName}</h3>
-            <input type="password" value={changePinData.oldPin} onChange={e=>setChangePinData({...changePinData, oldPin:e.target.value})} placeholder="Old PIN ••••" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginTop:10}}/>
-            <input type="password" value={changePinData.newPin} onChange={e=>setChangePinData({...changePinData, newPin:e.target.value})} placeholder="New PIN ••••" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginTop:8}}/>
-            <input type="password" value={changePinData.confirmPin} onChange={e=>setChangePinData({...changePinData, confirmPin:e.target.value})} placeholder="Confirm New PIN ••••" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginTop:8}}/>
+            <h3 style={{margin:"0 0 10px 0"}}>🔑 Change Owner PIN</h3>
+            <input type="password" value={changePinData.oldPin} onChange={e=>setChangePinData({...changePinData, oldPin:e.target.value})} placeholder="Old PIN" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginTop:10}}/>
+            <input type="password" value={changePinData.newPin} onChange={e=>setChangePinData({...changePinData, newPin:e.target.value})} placeholder="New PIN (min 4 digits)" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginTop:8}}/>
+            <input type="password" value={changePinData.confirmPin} onChange={e=>setChangePinData({...changePinData, confirmPin:e.target.value})} placeholder="Confirm New PIN" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginTop:8}}/>
             <div style={{display:"flex", gap:8, marginTop:12}}>
               <button onClick={handleChangePin} style={{flex:1, background:"#16a34a", color:"white", padding:12, borderRadius:8, fontWeight:800, border:"none", cursor:"pointer"}}>SAVE NEW PIN</button>
               <button onClick={()=>{setShowChangePin(false); setChangePinData({oldPin:"", newPin:"", confirmPin:""});}} style={{padding:12, borderRadius:8, border:"1px solid #ccc", background:"white", cursor:"pointer"}}>Cancel</button>
@@ -410,35 +446,35 @@ export default function Page() {
       )}
 
       {showProfit && (
-        <div className="no-print" style={{background:"#000", color:"#ff9aa2", padding:16, borderRadius:12, marginBottom:12, border:"2px solid #ff9aa2"}}>
+        <div className="no-print" style={{background:"#000", color:"#facc15", padding:16, borderRadius:12, marginBottom:12, border:"2px solid #facc15"}}>
           {pin!==ownerPin? (
-            <div><h3>🔒 Owner PIN</h3><div style={{display:"flex", gap:8}}><input type="password" value={pin} onChange={e=>setPin(e.target.value)} placeholder="Enter PIN ••••" style={{padding:10, borderRadius:8, flex:1}}/><button onClick={()=>{if(pin!==ownerPin) alert("Wrong PIN!");}} style={{padding:"10px 15px", borderRadius:8, background:"#ff9aa2", fontWeight:800, color:"black", border:"none"}}>Unlock</button><button onClick={()=>setShowProfit(false)} style={{padding:"10px 15px", borderRadius:8}}>Close</button></div></div>
+            <div><h3>🔒 Owner PIN</h3><div style={{display:"flex", gap:8}}><input type="password" value={pin} onChange={e=>setPin(e.target.value)} placeholder="Enter PIN ••••" style={{padding:10, borderRadius:8, flex:1}}/><button onClick={()=>{if(pin!==ownerPin) alert("Wrong PIN!");}} style={{padding:"10px 15px", borderRadius:8, background:"#facc15", fontWeight:800}}>Unlock</button><button onClick={()=>setShowProfit(false)} style={{padding:"10px 15px", borderRadius:8}}>Close</button></div></div>
           ) : (
             <div>
               <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
                 <h3 style={{margin:0}}>💰 PROFIT CALENDAR - {shopName}</h3>
                 <div style={{display:"flex", gap:6}}>
-                  <button onClick={()=>setCalendarView("today")} style={{background:calendarView==="today"?"#ff9aa2":"#222", color:calendarView==="today"?"#000":"#fff", border:"none", padding:"6px 10px", borderRadius:6, fontSize:11, fontWeight:700}}>Today</button>
-                  <button onClick={()=>setCalendarView("week")} style={{background:calendarView==="week"?"#ff9aa2":"#222", color:calendarView==="week"?"#000":"#fff", border:"none", padding:"6px 10px", borderRadius:6, fontSize:11, fontWeight:700}}>7 Days</button>
-                  <button onClick={()=>setCalendarView("month")} style={{background:calendarView==="month"?"#ff9aa2":"#222", color:calendarView==="month"?"#000":"#fff", border:"none", padding:"6px 10px", borderRadius:6, fontSize:11, fontWeight:700}}>Month</button>
+                  <button onClick={()=>setCalendarView("today")} style={{background:calendarView==="today"?"#facc15":"#222", color:calendarView==="today"?"#000":"#fff", border:"none", padding:"6px 10px", borderRadius:6, fontSize:11, fontWeight:700}}>Today</button>
+                  <button onClick={()=>setCalendarView("week")} style={{background:calendarView==="week"?"#facc15":"#222", color:calendarView==="week"?"#000":"#fff", border:"none", padding:"6px 10px", borderRadius:6, fontSize:11, fontWeight:700}}>7 Days</button>
+                  <button onClick={()=>setCalendarView("month")} style={{background:calendarView==="month"?"#facc15":"#222", color:calendarView==="month"?"#000":"#fff", border:"none", padding:"6px 10px", borderRadius:6, fontSize:11, fontWeight:700}}>Month</button>
                 </div>
               </div>
               {calendarView==="today" && (
                 <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginTop:12}}>
                   <div style={{background:"#111", padding:12, borderRadius:8, border:"1px solid #333"}}><div style={{fontSize:11, opacity:0.7}}>THIS CART</div><div style={{fontSize:13, marginTop:6}}>Sales: KES {totalSell.toLocaleString()}</div><div style={{fontSize:12}}>Cost: KES {totalBuy.toLocaleString()}</div><div style={{fontSize:13, color:"#4ade80", marginTop:6, fontWeight:800}}>Profit: KES {totalProfit.toLocaleString()}</div></div>
                   <div style={{background:"#111", padding:12, borderRadius:8, border:"1px solid #333"}}><div style={{fontSize:11, opacity:0.7}}>TODAY SUMMARY</div><div style={{fontSize:13, marginTop:6}}>Sales Today: KES {salesToday.toLocaleString()}</div><div style={{fontSize:12}}>Profit Earned: KES {profitToday.toLocaleString()}</div></div>
-                  <div style={{background:"#ff9aa2", color:"black", padding:14, borderRadius:10}}><div style={{fontSize:11, fontWeight:700}}>TODAY PROFIT (BIG)</div><div style={{fontSize:26, fontWeight:900, marginTop:4}}>KES {projectedProfitToday.toLocaleString()}</div></div>
+                  <div style={{background:"#facc15", color:"black", padding:14, borderRadius:10}}><div style={{fontSize:11, fontWeight:700}}>TODAY PROFIT (BIG)</div><div style={{fontSize:26, fontWeight:900, marginTop:4}}>KES {projectedProfitToday.toLocaleString()}</div></div>
                 </div>
               )}
               {calendarView==="week" && (
                 <div style={{marginTop:12}}>
                   <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10}}>
-                    <div style={{background:"#ff9aa2", color:"black", padding:12, borderRadius:8}}><div style={{fontSize:11}}>LAST 7 DAYS SALES</div><div style={{fontSize:22, fontWeight:900}}>KES {weekSales.toLocaleString()}</div></div>
+                    <div style={{background:"#facc15", color:"black", padding:12, borderRadius:8}}><div style={{fontSize:11}}>LAST 7 DAYS SALES</div><div style={{fontSize:22, fontWeight:900}}>KES {weekSales.toLocaleString()}</div></div>
                     <div style={{background:"#fff", color:"black", padding:12, borderRadius:8}}><div style={{fontSize:11}}>LAST 7 DAYS PROFIT</div><div style={{fontSize:22, fontWeight:900}}>KES {weekProfit.toLocaleString()}</div></div>
                   </div>
                   <div style={{display:"grid", gridTemplateColumns:"repeat(7, 1fr)", gap:6}}>
                     {last7.map(d=>(
-                      <div key={d.key} style={{background:d.key===todayKey?"#ff9aa2":"#111", color:d.key===todayKey?"black":"#ff9aa2", padding:8, borderRadius:8, border:"1px solid #333", textAlign:"center"}}>
+                      <div key={d.key} style={{background:d.key===todayKey?"#facc15":"#111", color:d.key===todayKey?"black":"#facc15", padding:8, borderRadius:8, border:"1px solid #333", textAlign:"center"}}>
                         <div style={{fontSize:10, fontWeight:700}}>{d.date.toLocaleDateString('en-KE', {weekday:'short'})}</div>
                         <div style={{fontSize:9}}>{d.key.slice(5)}</div>
                         <div style={{fontSize:12, fontWeight:800, marginTop:4}}>{d.data? `KES ${d.data.profit.toLocaleString()}` : "KES 0"}</div>
@@ -449,30 +485,44 @@ export default function Page() {
               )}
               {calendarView==="month" && (
                 <div style={{marginTop:12}}>
-                  <div style={{background:"linear-gradient(135deg,#ff9aa2,#7a1e2d)", color:"white", padding:16, borderRadius:12, display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10}}>
+                  <div style={{background:"linear-gradient(135deg,#facc15,#f59e0b)", color:"black", padding:16, borderRadius:12, display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10}}>
                     <div><div style={{fontSize:11, fontWeight:700}}>MONTH: {todayKey.slice(0,7)}</div><div style={{fontSize:24, fontWeight:900}}>KES {month.mSales.toLocaleString()}</div></div>
                     <div><div style={{fontSize:11, fontWeight:700}}>TOTAL PROFIT</div><div style={{fontSize:24, fontWeight:900}}>KES {month.mProfit.toLocaleString()}</div></div>
                     <div><div style={{fontSize:11, fontWeight:700}}>DAYS WORKED</div><div style={{fontSize:24, fontWeight:900}}>{month.entries.length || 1}</div></div>
                   </div>
                 </div>
               )}
-              <button onClick={()=>{setShowProfit(false); setPin("");}} style={{background:"#ff9aa2", color:"black", padding:"8px 16px", borderRadius:8, fontWeight:800, border:"none", marginTop:12}}>Lock 🔒</button>
+              <button onClick={()=>{setShowProfit(false); setPin("");}} style={{background:"#facc15", color:"black", padding:"8px 16px", borderRadius:8, fontWeight:800, border:"none", marginTop:12}}>Lock 🔒</button>
             </div>
           )}
         </div>
       )}
 
+      {showPaid && (
+        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:10000, padding:20}}>
+          <div style={{background:"white", padding:30, borderRadius:16, maxWidth:360, width:"100%", textAlign:"center", border:"4px solid #16a34a"}}>
+            <div style={{fontSize:50}}>✅</div>
+            <h2 style={{color:"#16a34a", margin:"10px 0"}}>M-PESA PAID!</h2>
+            <div style={{background:"#f0fdf4", padding:12, borderRadius:10, marginTop:10}}>
+              <div style={{fontSize:12}}>CODE: <b>{paidCode}</b></div>
+              <div style={{fontSize:12}}>AMOUNT: <b>KES {paidAmount.toLocaleString()}</b></div>
+            </div>
+            <p style={{fontSize:11, color:"#666", marginTop:10}}>Generating receipt...</p>
+          </div>
+        </div>
+      )}
+
       {receipt && (
         <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999, padding:20}}>
-          <div style={{background:"white", padding:20, borderRadius:12, maxWidth:360, width:"100%", maxHeight:"90vh", overflowY:"auto"}}>
+          <div style={{background:"white", padding:20, borderRadius:12, maxWidth:360, width:"100%"}}>
             <h2 style={{marginTop:0, textAlign:"center"}}>DUKAPULSE RECEIPT</h2>
-            <p style={{fontSize:11, textAlign:"center", margin:"4px 0"}}>{receipt.shopName} - {receipt.shopId}</p>
-            <p style={{fontSize:10, textAlign:"center", color:"#7a1e2d", fontWeight:800}}>Paid via LOOP BIZ Paybill 714888 Acc 467108</p>
+            <p style={{fontSize:11, textAlign:"center"}}>{receipt.shopName}</p>
             <div style={{borderTop:"1px dashed #ccc", margin:"10px 0", paddingTop:10, fontSize:12}}>
               <div>ID: {receipt.id}</div>
               <div>Date: {receipt.date}</div>
               <div>Method: {receipt.method}</div>
-              <div>CODE: {receipt.code}</div>
+              <div>CODE: {receipt.mpesaCode}</div>
+              <div>Phone: {receipt.phone}</div>
             </div>
             <div style={{borderTop:"1px dashed #ccc", paddingTop:8}}>
               {receipt.cart.map((c:any)=><div key={c.id} style={{display:"flex", justifyContent:"space-between", fontSize:12, marginBottom:4}}><span>{c.name.slice(0,20)} x{c.qty}</span><span>KES {c.sell*c.qty}</span></div>)}
@@ -480,8 +530,7 @@ export default function Page() {
             <div style={{borderTop:"2px solid black", marginTop:8, paddingTop:8, display:"flex", justifyContent:"space-between", fontWeight:900, fontSize:16}}>
               <span>TOTAL</span><span>KES {receipt.total.toLocaleString()}</span>
             </div>
-            <div style={{fontSize:10, textAlign:"center", marginTop:8, color:"#666"}}>Thank you! Karibu tena!<br/>LOOP BIZ: Paybill 714888 Account 467108</div>
-            <button onClick={closeReceipt} className="no-print" style={{width:"100%", background:"black", color:"white", padding:12, borderRadius:8, fontWeight:800, border:"none", marginTop:12, cursor:"pointer"}}>DONE - NEW SALE</button>
+            <button onClick={closeReceipt} style={{width:"100%", background:"black", color:"white", padding:12, borderRadius:8, fontWeight:800, border:"none", marginTop:12, cursor:"pointer"}}>DONE - NEW SALE</button>
           </div>
         </div>
       )}
@@ -500,7 +549,7 @@ export default function Page() {
                   </div>
                 )}
               </div>
-              {!isOwnerMode && <button onClick={()=>addToCart(item)} style={{background:"#ff9aa2", border:"none", padding:"6px 10px", borderRadius:8, fontWeight:800, fontSize:11, cursor:"pointer"}}>+</button>}
+              {!isOwnerMode && <button onClick={()=>addToCart(item)} style={{background:"#facc15", border:"none", padding:"6px 10px", borderRadius:8, fontWeight:800, fontSize:11, cursor:"pointer"}}>+</button>}
             </div>
           ))}
         </div></div>
@@ -510,31 +559,12 @@ export default function Page() {
           {cart.length===0 && <div style={{fontSize:12, color:"#888"}}>Cart empty</div>}
           <h2 style={{margin:"10px 0 4px 0"}}>Total: KES {totalSell.toLocaleString()}</h2>
           <div style={{fontSize:11, background:"#fef9c3", padding:6, borderRadius:6, marginBottom:8}}>Cart Profit: KES {totalProfit.toLocaleString()}</div>
-          
-          {/* LOOP BIZ PAYMENT MODE - NO PHONE NUMBER */}
-          <div style={{background:"#7a1e2d", borderRadius:10, padding:10, color:"white"}}>
-            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
-              <span style={{fontWeight:900, fontSize:14, color:"#ff9aa2"}}>LOOP BIZ</span>
-              <span style={{fontSize:9, background:"white", color:"#7a1e2d", padding:"2px 6px", borderRadius:10, fontWeight:800}}>PAY WITH LOOP</span>
-            </div>
-            <div style={{fontSize:9, marginTop:4, opacity:0.9}}>M-PESA & AIRTEL MONEY PAYBILL</div>
-            <div style={{fontSize:26, fontWeight:900, letterSpacing:1, color:"#ff6b7a"}}>714888</div>
-            <div style={{fontSize:10, fontWeight:700, marginTop:4}}>LOOP BIZ ACCOUNT NUMBER</div>
-            <div style={{display:"flex", gap:4, marginTop:3}}>
-              {["4","6","7","1","0","8"].map((d,i)=><div key={i} style={{background:"white", color:"#7a1e2d", width:28, height:28, display:"flex", alignItems:"center", justifyContent:"center", borderRadius:4, fontWeight:900, fontSize:14}}>{d}</div>)}
-            </div>
-            <div style={{fontSize:9, marginTop:8, background:"rgba(255,255,255,0.15)", padding:6, borderRadius:6, lineHeight:1.3}}>
-              Customer: M-Pesa → Lipa na M-Pesa → Paybill → <b>714888</b> → Acc <b>467108</b> → Amt <b>{totalSell.toLocaleString()}</b>
-            </div>
-          </div>
 
-          <input value={mpesaCode} onChange={e=>setMpesaCode(e.target.value)} placeholder="Enter LOOP CODE e.g. QGH..." style={{width:"100%", padding:11, borderRadius:8, border:"2px solid black", margin:"8px 0", fontWeight:700}}/>
-          <button onClick={()=>completeSale("LOOP BIZ", mpesaCode || "PENDING-VERIFY", totalSell)} style={{width:"100%", background:"#7a1e2d", color:"white", border:"none", padding:14, borderRadius:10, fontWeight:900, cursor:"pointer"}}>
-            CONFIRM LOOP BIZ PAYMENT
-          </button>
-          <button onClick={()=>{ if(confirm("Cash sale KES "+totalSell+"?")) completeSale("CASH", "CASH", totalSell)}} style={{width:"100%", marginTop:6, background:"black", color:"white", border:"none", padding:11, borderRadius:8, fontWeight:800, cursor:"pointer"}}>CASH SALE</button>
+          {/* NORMAL CUSTOMER PAYMENT - NOT LOOP BIZ */}
+          <input value={mpesaPhone} onChange={e=>setMpesaPhone(e.target.value)} placeholder="Customer M-Pesa 07xx (empty=CASH)" style={{width:"100%", padding:11, borderRadius:8, border:"2px solid black", margin:"8px 0"}}/>
+          <button disabled={loading} onClick={handleSale} style={{width:"100%", background: loading?"#9ca3af":"#000", color:"white", border:"none", padding:14, borderRadius:10, fontWeight:900, cursor:"pointer"}}>{loading? status : "LIPA NA M-PESA / CASH"}</button>
           <button onClick={()=>setCart([])} style={{width:"100%", marginTop:6, background:"#f3f4f6", border:"none", padding:9, borderRadius:8, cursor:"pointer"}}>Clear Cart</button>
-          <div style={{fontSize:9, color:"#7a1e2d", marginTop:8, textAlign:"center", fontWeight:700}}>LOOP BIZ Paybill 714888 Account 467108</div>
+          <div style={{fontSize:10, color:"#888", marginTop:8, textAlign:"center"}}>Customer pays via STK to their phone<br/>Subscription Exp: {expiry}</div>
         </div>
       </div>
     </main>
