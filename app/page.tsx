@@ -108,6 +108,9 @@ export default function Page() {
   const [ownerPin, setOwnerPin] = useState("1234");
   const [showChangePin, setShowChangePin] = useState(false);
   const [changePinData, setChangePinData] = useState({oldPin:"", newPin:"", confirmPin:""});
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [expiry, setExpiry] = useState("");
+  const [adminCode, setAdminCode] = useState("");
 
   useEffect(()=>{
     const savedShop = localStorage.getItem("dukapulse_current_shop");
@@ -122,14 +125,22 @@ export default function Page() {
     const histKey = `dukapulse_${shopId}_history_v6`;
     const dateKey = `dukapulse_${shopId}_last_date_v6`;
     const pinKey = `dukapulse_${shopId}_owner_pin_v6`;
+    const expiryKey = `dukapulse_${shopId}_expiry_v6`;
     const saved = localStorage.getItem(stockKey);
     const savedSales = localStorage.getItem(salesKey);
     const savedProfit = localStorage.getItem(profitKey);
     const savedHist = localStorage.getItem(histKey);
     const savedDate = localStorage.getItem(dateKey);
     const savedPin = localStorage.getItem(pinKey);
-    if(savedPin) setOwnerPin(savedPin);
-    else setOwnerPin("1234");
+    let savedExpiry = localStorage.getItem(expiryKey);
+    if(savedPin) setOwnerPin(savedPin); else setOwnerPin("1234");
+    if(!savedExpiry){
+      const freeTrial = new Date(); freeTrial.setDate(freeTrial.getDate()+7);
+      savedExpiry = freeTrial.toISOString().slice(0,10);
+      localStorage.setItem(expiryKey, savedExpiry);
+    }
+    setExpiry(savedExpiry);
+    if(new Date().toISOString().slice(0,10) > savedExpiry){ setIsBlocked(true); }
     const today = getTodayKey();
     if(saved){ try{ const p=JSON.parse(saved); if(p.length>0) setItems(p);}catch{ setItems(INITIAL_ITEMS); } } else { setItems(INITIAL_ITEMS); }
     if(savedHist){ try{ setHistory(JSON.parse(savedHist)); }catch{} }
@@ -235,8 +246,6 @@ export default function Page() {
   const totalProfit = totalSell - totalBuy;
   const projectedProfitToday = profitToday + totalProfit;
   const todayKey = getTodayKey();
-  const yesterday = new Date(); yesterday.setDate(yesterday.getDate()-1);
-  const yesterdayKey = getDateKey(yesterday);
   const getLast7Days = () => {
     const days = [];
     for(let i=0;i<7;i++){ const d=new Date(); d.setDate(d.getDate()-i); const k=getDateKey(d); days.push({key:k, date:d, data: history[k] || (k===todayKey? {sales:salesToday, profit:profitToday, count:0} : undefined)}); }
@@ -314,29 +323,57 @@ export default function Page() {
     )
   }
 
+  if(isBlocked){
+    return (
+      <main style={{fontFamily:"system-ui", minHeight:"100vh", background:"#000", display:"flex", alignItems:"center", justifyContent:"center", padding:20}}>
+        <div style={{background:"white", padding:30, borderRadius:16, maxWidth:400, width:"100%", textAlign:"center", border:"4px solid red"}}>
+          <h1 style={{color:"red", fontSize:40, margin:0}}>🔒 LOCKED</h1>
+          <h2 style={{margin:"10px 0", fontSize:18}}>{shopName.toUpperCase()} - SUBSCRIPTION EXPIRED</h2>
+          <p style={{fontSize:13, color:"#666"}}>Expired on: {expiry}<br/>You didn't pay KES 1500 monthly!</p>
+          <p style={{fontSize:12, background:"#fef2f2", padding:10, borderRadius:8, marginTop:10, fontWeight:700}}>Lipa na M-Pesa to 0718899014<br/>Then enter admin unlock code below</p>
+          <input type="password" value={adminCode} onChange={e=>setAdminCode(e.target.value)} placeholder="Enter Admin Code ••••" style={{width:"100%", padding:12, borderRadius:8, border:"2px solid red", marginTop:12}}/>
+          <button onClick={()=>{
+            if(adminCode==="DUKA2026"){
+              const newDate = new Date(); newDate.setDate(newDate.getDate()+30);
+              const newExpiry = newDate.toISOString().slice(0,10);
+              localStorage.setItem(`dukapulse_${shopId}_expiry_v6`, newExpiry);
+              setIsBlocked(false); setExpiry(newExpiry); setAdminCode(""); alert(`✅ UNLOCKED 30 DAYS! New expiry: ${newExpiry}`);
+            } else if(adminCode==="TRIAL7"){
+              const newDate = new Date(); newDate.setDate(newDate.getDate()+7);
+              const newExpiry = newDate.toISOString().slice(0,10);
+              localStorage.setItem(`dukapulse_${shopId}_expiry_v6`, newExpiry);
+              setIsBlocked(false); setExpiry(newExpiry); setAdminCode(""); alert(`✅ 7 DAY TRIAL ADDED! Expiry: ${newExpiry}`);
+            } else { alert("Wrong admin code! Call 0718899014"); }
+          }} style={{width:"100%", background:"red", color:"white", padding:12, borderRadius:8, fontWeight:900, border:"none", marginTop:10, cursor:"pointer"}}>UNLOCK SHOP</button>
+          <p style={{fontSize:11, color:"#888", marginTop:10}}>Call Boss: 0718899014 to pay<br/>Till: 0718899014</p>
+          <button onClick={()=>{ if(confirm("Logout?")){ localStorage.removeItem("dukapulse_current_shop"); setShopId(null); setIsBlocked(false);} }} style={{marginTop:10, background:"#eee", border:"none", padding:"8px 16px", borderRadius:8, fontSize:12}}>Logout</button>
+        </div>
+      </main>
+    )
+  }
+
   return (
     <main style={{fontFamily:"system-ui", padding:12, maxWidth:1300, margin:"0 auto", background:"#f5f7fb", minHeight:"100vh"}}>
       <div className="no-print" style={{background:"linear-gradient(135deg,#000,#2563eb)", color:"white", padding:16, borderRadius:14, marginBottom:12}}>
         <div style={{display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:10}}>
-          <div><h1 style={{margin:0, fontSize:18, fontWeight:900}}>DUKAPULSE - {shopName.toUpperCase()} - SHOP ID: {shopId}</h1><p style={{margin:"4px 0 0 0", fontSize:12, opacity:0.9}}>{items.length} Items ● Today Sales KES {salesToday.toLocaleString()} ● Profit KES {profitToday.toLocaleString()} ● {status}</p></div>
+          <div><h1 style={{margin:0, fontSize:18, fontWeight:900}}>DUKAPULSE - {shopName.toUpperCase()} - {shopId}</h1><p style={{margin:"4px 0 0 0", fontSize:11, opacity:0.9}}>{items.length} Items ● Today KES {salesToday.toLocaleString()} ● Profit KES {profitToday.toLocaleString()} ● Exp: {expiry} ● {status}</p></div>
           <div style={{display:"flex", gap:8}}>
-            <button onClick={tryEnterOwnerMode} style={{background: isOwnerMode? "#facc15" : "white", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>{isOwnerMode? "🛒 Selling Mode (Owner)" : "🔒 Owner Restock Mode"}</button>
+            <button onClick={tryEnterOwnerMode} style={{background: isOwnerMode? "#facc15" : "white", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>{isOwnerMode? "🛒 Selling Mode" : "🔒 Owner Restock"}</button>
             <button onClick={handleLogout} style={{background:"white", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>Logout</button>
             <button onClick={()=>setShowProfit(true)} style={{background:"#000", color:"#facc15", border:"1px solid #facc15", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>🔒 MY PROFIT</button>
           </div>
         </div>
         <div style={{display:"flex", gap:6, marginTop:10, flexWrap:"wrap"}}>{["All",...Array.from(new Set(items.map(i=>i.category)))].map(cat=>(<button key={cat} onClick={()=>setCategory(cat)} style={{background: category===cat?"white":"rgba(255,255,255,0.2)", color: category===cat?"black":"white", border:"none", padding:"6px 12px", borderRadius:20, fontSize:11, fontWeight:700, cursor:"pointer"}}>{cat}</button>))}</div>
-        {isOwnerMode && <div style={{marginTop:10, background:"#facc15", color:"black", padding:"8px 12px", borderRadius:8, fontSize:12, fontWeight:700, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8}}><span>🔓 OWNER MODE UNLOCKED</span><div style={{display:"flex", gap:6}}><button onClick={()=>setShowAddForm(true)} style={{background:"black", color:"#facc15", border:"none", padding:"6px 14px", borderRadius:20, fontWeight:900, fontSize:12, cursor:"pointer"}}>➕ ADD NEW PRODUCT</button><button onClick={()=>setShowChangePin(true)} style={{background:"white", color:"black", border:"1px solid black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>🔑 Change PIN</button></div></div>}
+        {isOwnerMode && <div style={{marginTop:10, background:"#facc15", color:"black", padding:"8px 12px", borderRadius:8, fontSize:12, fontWeight:700, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8}}><span>🔓 OWNER UNLOCKED - Exp {expiry}</span><div style={{display:"flex", gap:6}}><button onClick={()=>setShowAddForm(true)} style={{background:"black", color:"#facc15", border:"none", padding:"6px 14px", borderRadius:20, fontWeight:900, fontSize:12, cursor:"pointer"}}>➕ ADD PRODUCT</button><button onClick={()=>setShowChangePin(true)} style={{background:"white", color:"black", border:"1px solid black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>🔑 Change PIN</button></div></div>}
       </div>
 
       {ownerPinPrompt && (
         <div className="no-print" style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9998, padding:20}}>
           <div style={{background:"white", padding:20, borderRadius:12, maxWidth:340, width:"100%"}}>
             <h3 style={{margin:"0 0 10px 0"}}>🔒 Owner PIN Required</h3>
-            <p style={{fontSize:12, color:"#666"}}>Only owner can access. Workers cannot see.</p>
             <input type="password" value={ownerPinInput} onChange={e=>setOwnerPinInput(e.target.value)} placeholder="Enter PIN ••••" style={{width:"100%", padding:12, borderRadius:8, border:"2px solid black", marginTop:10}}/>
             <div style={{display:"flex", gap:8, marginTop:12}}>
-              <button onClick={confirmOwnerPin} style={{flex:1, background:"black", color:"white", padding:12, borderRadius:8, fontWeight:800, border:"none", cursor:"pointer"}}>UNLOCK OWNER MODE</button>
+              <button onClick={confirmOwnerPin} style={{flex:1, background:"black", color:"white", padding:12, borderRadius:8, fontWeight:800, border:"none", cursor:"pointer"}}>UNLOCK</button>
               <button onClick={()=>{setOwnerPinPrompt(false); setOwnerPinInput("");}} style={{padding:12, borderRadius:8, border:"1px solid #ccc", background:"white", cursor:"pointer"}}>Cancel</button>
             </div>
           </div>
@@ -347,7 +384,6 @@ export default function Page() {
         <div className="no-print" style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999, padding:20}}>
           <div style={{background:"white", padding:20, borderRadius:12, maxWidth:360, width:"100%"}}>
             <h3 style={{margin:"0 0 10px 0"}}>🔑 Change Owner PIN - {shopName}</h3>
-            <p style={{fontSize:11, color:"#666"}}>This PIN works for Profit + Owner Mode. Saved per shop. Default is 1234.</p>
             <input type="password" value={changePinData.oldPin} onChange={e=>setChangePinData({...changePinData, oldPin:e.target.value})} placeholder="Old PIN ••••" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginTop:10}}/>
             <input type="password" value={changePinData.newPin} onChange={e=>setChangePinData({...changePinData, newPin:e.target.value})} placeholder="New PIN •••• (min 4 digits)" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginTop:8}}/>
             <input type="password" value={changePinData.confirmPin} onChange={e=>setChangePinData({...changePinData, confirmPin:e.target.value})} placeholder="Confirm New PIN ••••" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginTop:8}}/>
@@ -458,6 +494,7 @@ export default function Page() {
           <input value={mpesaPhone} onChange={e=>setMpesaPhone(e.target.value)} placeholder="07xx M-Pesa / empty=CASH" style={{width:"100%", padding:11, borderRadius:8, border:"2px solid black", margin:"8px 0"}}/>
           <button disabled={loading} onClick={handleSale} style={{width:"100%", background: loading?"#9ca3af":"#000", color:"white", border:"none", padding:14, borderRadius:10, fontWeight:900, cursor:"pointer"}}>{loading? status : "LIPA NA M-PESA / CASH"}</button>
           <button onClick={()=>setCart([])} style={{width:"100%", marginTop:6, background:"#f3f4f6", border:"none", padding:9, borderRadius:8, cursor:"pointer"}}>Clear</button>
+          <div style={{fontSize:10, color:"#888", marginTop:8, textAlign:"center"}}>Sub Exp: {expiry} | 0718899014</div>
         </div>
       </div>
     </main>
