@@ -79,6 +79,8 @@ function getTodayKey() { return new Date().toISOString().slice(0,10); }
 function getDateKey(d: Date) { return d.toISOString().slice(0,10); }
 
 export default function Page() {
+  const [shopId, setShopId] = useState<string | null>(null);
+  const [shopName, setShopName] = useState("");
   const [items, setItems] = useState<Item[]>(INITIAL_ITEMS);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState("");
@@ -90,48 +92,73 @@ export default function Page() {
   const [salesToday, setSalesToday] = useState(0);
   const [profitToday, setProfitToday] = useState(0);
   const [history, setHistory] = useState<Record<string, DailyRecord>>({});
-  const [showAdd, setShowAdd] = useState(false);
   const [showProfit, setShowProfit] = useState(false);
   const [calendarView, setCalendarView] = useState<"today"|"week"|"month">("today");
   const [pin, setPin] = useState("");
-  const [newItem, setNewItem] = useState({ name: "", buy: "", sell: "", stock: "", category: "General" });
   const [showPaid, setShowPaid] = useState(false);
   const [paidCode, setPaidCode] = useState("");
   const [paidAmount, setPaidAmount] = useState(0);
+  const [loginInput, setLoginInput] = useState("");
+
+  // --- MULTI-SHOP LOGIN ---
+  useEffect(()=>{
+    const savedShop = localStorage.getItem("dukapulse_current_shop");
+    if(savedShop){ setShopId(savedShop); setShopName(savedShop); }
+  },[]);
 
   useEffect(()=>{
-    const saved = localStorage.getItem("dukapulse_stock_v5");
-    const savedSales = localStorage.getItem("dukapulse_sales_today_v5");
-    const savedProfit = localStorage.getItem("dukapulse_profit_today_v5");
-    const savedHist = localStorage.getItem("dukapulse_history_v5");
-    const savedDate = localStorage.getItem("dukapulse_last_date_v5");
+    if(!shopId) return;
+    const stockKey = `dukapulse_${shopId}_stock_v6`;
+    const salesKey = `dukapulse_${shopId}_sales_today_v6`;
+    const profitKey = `dukapulse_${shopId}_profit_today_v6`;
+    const histKey = `dukapulse_${shopId}_history_v6`;
+    const dateKey = `dukapulse_${shopId}_last_date_v6`;
+    const saved = localStorage.getItem(stockKey);
+    const savedSales = localStorage.getItem(salesKey);
+    const savedProfit = localStorage.getItem(profitKey);
+    const savedHist = localStorage.getItem(histKey);
+    const savedDate = localStorage.getItem(dateKey);
     const today = getTodayKey();
-    if(saved){ try{ const p=JSON.parse(saved); if(p.length>0) setItems(p);}catch{} }
+    if(saved){ try{ const p=JSON.parse(saved); if(p.length>0) setItems(p);}catch{ setItems(INITIAL_ITEMS); } } else { setItems(INITIAL_ITEMS); }
     if(savedHist){ try{ setHistory(JSON.parse(savedHist)); }catch{} }
     if(savedDate!== today){
-      localStorage.setItem("dukapulse_last_date_v5", today);
+      localStorage.setItem(dateKey, today);
       setSalesToday(0); setProfitToday(0);
-      localStorage.setItem("dukapulse_sales_today_v5", "0");
-      localStorage.setItem("dukapulse_profit_today_v5", "0");
+      localStorage.setItem(salesKey, "0");
+      localStorage.setItem(profitKey, "0");
     } else {
       if(savedSales) setSalesToday(Number(savedSales));
       if(savedProfit) setProfitToday(Number(savedProfit));
     }
-  }, []);
+  }, [shopId]);
 
   const saveStock = (newItems: Item[]) => {
+    if(!shopId) return;
     setItems(newItems);
-    localStorage.setItem("dukapulse_stock_v5", JSON.stringify(newItems));
+    localStorage.setItem(`dukapulse_${shopId}_stock_v6`, JSON.stringify(newItems));
+  };
+  const saveHistory = (newHist: Record<string, DailyRecord>) => {
+    if(!shopId) return;
+    setHistory(newHist);
+    localStorage.setItem(`dukapulse_${shopId}_history_v6`, JSON.stringify(newHist));
   };
 
-  const saveHistory = (newHist: Record<string, DailyRecord>) => {
-    setHistory(newHist);
-    localStorage.setItem("dukapulse_history_v5", JSON.stringify(newHist));
+  const handleLogin = () => {
+    if(!loginInput.trim()) return alert("Enter shop name e.g. Mumias Hardware");
+    const id = loginInput.trim().toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'');
+    localStorage.setItem("dukapulse_current_shop", id);
+    setShopId(id);
+    setShopName(loginInput.trim());
+  };
+  const handleLogout = () => {
+    if(confirm("Logout from this shop? Data will stay safe.")){
+      localStorage.removeItem("dukapulse_current_shop");
+      setShopId(null); setCart([]); setShopName("");
+    }
   };
 
   const categories = ["All",...Array.from(new Set(items.map(i=>i.category)))];
   const filtered = items.filter(i => i.name.toLowerCase().includes(search.toLowerCase()) && (category==="All" || i.category===category));
-
   const addToCart = (item: Item) => {
     if(item.stock<=0) return alert("Out of stock");
     setCart(prev => {
@@ -146,11 +173,9 @@ export default function Page() {
   const totalBuy = cart.reduce((s,i)=>s+i.buy*i.qty,0);
   const totalProfit = totalSell - totalBuy;
   const projectedProfitToday = profitToday + totalProfit;
-
   const todayKey = getTodayKey();
   const yesterday = new Date(); yesterday.setDate(yesterday.getDate()-1);
   const yesterdayKey = getDateKey(yesterday);
-
   const getLast7Days = () => {
     const days = [];
     for(let i=0;i<7;i++){ const d=new Date(); d.setDate(d.getDate()-i); const k=getDateKey(d); days.push({key:k, date:d, data: history[k] || (k===todayKey? {sales:salesToday, profit:profitToday, count:0} : undefined)}); }
@@ -164,7 +189,6 @@ export default function Page() {
     else { mSales = entries.reduce((s,[,v])=>s+v.sales,0); mProfit = entries.reduce((s,[,v])=>s+v.profit,0); if(!entries.find(([k])=>k===todayKey)){ mSales+=salesToday; mProfit+=profitToday; } }
     return {mSales, mProfit, entries};
   };
-
   const handleSale = async () => {
     if(cart.length===0) return alert("Cart empty!");
     if(!mpesaPhone || mpesaPhone.length < 10){
@@ -178,13 +202,12 @@ export default function Page() {
       const resp = await fetch("/api/mpesa", {
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({phone: mpesaPhone, amount: totalSell})
+        body: JSON.stringify({phone: mpesaPhone, amount: totalSell, shopId})
       });
       const data = await resp.json();
       if(!resp.ok) throw new Error(data.error || "STK failed");
       const checkoutId = data.CheckoutRequestID;
       setStatus("✅ STK Sent! Enter PIN...");
-
       for(let i=0;i<20;i++){
         await new Promise(r=>setTimeout(r,3000));
         setStatus(`⏳ Waiting M-Pesa... ${i+1}/20`);
@@ -212,8 +235,8 @@ export default function Page() {
       setStatus("Failed");
     }
   };
-
   const completeSale = (method: string, mpesaCode: string, amount: number) => {
+    if(!shopId) return;
     let newItems=[...items];
     cart.forEach(c=>{ newItems=newItems.map(it=> it.id===c.id? {...it, stock: it.stock - c.qty} : it); });
     saveStock(newItems);
@@ -222,26 +245,41 @@ export default function Page() {
     if(!newHist[key]) newHist[key] = {sales:0, profit:0, count:0};
     newHist[key] = {sales: newHist[key].sales + totalSell, profit: newHist[key].profit + totalProfit, count: newHist[key].count + 1};
     saveHistory(newHist);
-    setSalesToday(s=>{const ns=s+totalSell; localStorage.setItem("dukapulse_sales_today_v5", String(ns)); return ns;});
-    setProfitToday(p=>{const np=p+totalProfit; localStorage.setItem("dukapulse_profit_today_v5", String(np)); return np;});
-    const rec={id:"RCPT-"+Date.now().toString().slice(-6), date:new Date().toLocaleString(), cart:cart.map(c=>({...c, sell:getSellPrice(c)})), total:amount, phone:mpesaPhone||"CASH", method, mpesaCode};
+    const salesKey = `dukapulse_${shopId}_sales_today_v6`;
+    const profitKey = `dukapulse_${shopId}_profit_today_v6`;
+    setSalesToday(s=>{const ns=s+totalSell; localStorage.setItem(salesKey, String(ns)); return ns;});
+    setProfitToday(p=>{const np=p+totalProfit; localStorage.setItem(profitKey, String(np)); return np;});
+    const rec={id:"RCPT-"+Date.now().toString().slice(-6), date:new Date().toLocaleString(), cart:cart.map(c=>({...c, sell:getSellPrice(c)})), total:amount, phone:mpesaPhone||"CASH", method, mpesaCode, shopId, shopName};
     setReceipt(rec); setLoading(false); setStatus("✅ Paid!");
   };
   const closeReceipt=()=>{setReceipt(null); setCart([]); setMpesaPhone(""); setStatus("");};
-
   const last7 = getLast7Days();
   const month = getThisMonth();
   const weekSales = last7.reduce((s,d)=> s + (d.data?.sales||0), 0);
   const weekProfit = last7.reduce((s,d)=> s + (d.data?.profit||0), 0);
 
+  if(!shopId){
+    return (
+      <main style={{fontFamily:"system-ui", minHeight:"100vh", background:"linear-gradient(135deg,#000,#2563eb)", display:"flex", alignItems:"center", justifyContent:"center", padding:20}}>
+        <div style={{background:"white", padding:30, borderRadius:16, maxWidth:420, width:"100%", textAlign:"center"}}>
+          <h1 style={{margin:0, fontWeight:900, fontSize:22}}>DUKAPULSE - LOGIN</h1>
+          <p style={{fontSize:12, color:"#666", marginTop:6}}>Each hardware has own isolated data. No mixing.</p>
+          <input value={loginInput} onChange={e=>setLoginInput(e.target.value)} placeholder="Enter Shop Name e.g. Mumias Hardware" style={{width:"100%", padding:14, borderRadius:10, border:"2px solid black", marginTop:20, fontWeight:700}}/>
+          <button onClick={handleLogin} style={{width:"100%", background:"black", color:"white", padding:14, borderRadius:10, fontWeight:900, marginTop:12, border:"none", cursor:"pointer"}}>OPEN MY SHOP →</button>
+          <p style={{fontSize:11, color:"#888", marginTop:12}}>Demo: Try "Mumias Hardware" then logout and try "Bungoma Hardware" - stock & sales will be different! This is how 500 shops stay separate.</p>
+        </div>
+      </main>
+    )
+  }
+
   return (
     <main style={{fontFamily:"system-ui", padding:12, maxWidth:1300, margin:"0 auto", background:"#f5f7fb", minHeight:"100vh"}}>
       <div className="no-print" style={{background:"linear-gradient(135deg,#000,#2563eb)", color:"white", padding:16, borderRadius:14, marginBottom:12}}>
         <div style={{display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:10}}>
-          <div><h1 style={{margin:0, fontSize:20, fontWeight:900}}>DUKAPULSE - MUMIAS FULL HARDWARE</h1><p style={{margin:"4px 0 0 0", fontSize:12, opacity:0.9}}>{items.length} Items ● Today Sales KES {salesToday.toLocaleString()} ● Today Profit KES {profitToday.toLocaleString()} ● {status}</p></div>
-          <div style={{display:"flex", gap:8}}><button onClick={()=>setShowAdd(!showAdd)} style={{background:"#facc15", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>+ ADD MATERIAL</button><button onClick={()=>setShowProfit(true)} style={{background:"#000", color:"#facc15", border:"1px solid #facc15", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>🔒 MY PROFIT</button></div>
+          <div><h1 style={{margin:0, fontSize:18, fontWeight:900}}>DUKAPULSE - {shopName.toUpperCase()} - SHOP ID: {shopId}</h1><p style={{margin:"4px 0 0 0", fontSize:12, opacity:0.9}}>{items.length} Items ● Today Sales KES {salesToday.toLocaleString()} ● Profit KES {profitToday.toLocaleString()} ● {status}</p></div>
+          <div style={{display:"flex", gap:8}}><button onClick={handleLogout} style={{background:"white", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>Logout</button><button onClick={()=>setShowProfit(true)} style={{background:"#000", color:"#facc15", border:"1px solid #facc15", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>🔒 MY PROFIT</button></div>
         </div>
-        <div style={{display:"flex", gap:6, marginTop:10, flexWrap:"wrap"}}>{categories.map(cat=>(<button key={cat} onClick={()=>setCategory(cat)} style={{background: category===cat?"white":"rgba(255,255,255,0.2)", color: category===cat?"black":"white", border:"none", padding:"6px 12px", borderRadius:20, fontSize:11, fontWeight:700, cursor:"pointer"}}>{cat}</button>))}</div>
+        <div style={{display:"flex", gap:6, marginTop:10, flexWrap:"wrap"}}>{["All",...Array.from(new Set(items.map(i=>i.category)))].map(cat=>(<button key={cat} onClick={()=>setCategory(cat)} style={{background: category===cat?"white":"rgba(255,255,255,0.2)", color: category===cat?"black":"white", border:"none", padding:"6px 12px", borderRadius:20, fontSize:11, fontWeight:700, cursor:"pointer"}}>{cat}</button>))}</div>
       </div>
 
       {showProfit && (
@@ -251,7 +289,7 @@ export default function Page() {
           ) : (
             <div>
               <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
-                <h3 style={{margin:0}}>💰 PROFIT CALENDAR - BEST VIEW</h3>
+                <h3 style={{margin:0}}>💰 PROFIT CALENDAR - {shopName}</h3>
                 <div style={{display:"flex", gap:6}}>
                   <button onClick={()=>setCalendarView("today")} style={{background:calendarView==="today"?"#facc15":"#222", color:calendarView==="today"?"#000":"#fff", border:"none", padding:"6px 10px", borderRadius:6, fontSize:11, fontWeight:700}}>Today</button>
                   <button onClick={()=>setCalendarView("week")} style={{background:calendarView==="week"?"#facc15":"#222", color:calendarView==="week"?"#000":"#fff", border:"none", padding:"6px 10px", borderRadius:6, fontSize:11, fontWeight:700}}>Last 7 Days</button>
@@ -262,7 +300,7 @@ export default function Page() {
                 <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginTop:12}}>
                   <div style={{background:"#111", padding:12, borderRadius:8, border:"1px solid #333"}}><div style={{fontSize:11, opacity:0.7}}>THIS CART</div><div style={{fontSize:13, marginTop:6}}>Sales: KES {totalSell.toLocaleString()}</div><div style={{fontSize:12}}>Cost: KES {totalBuy.toLocaleString()}</div><div style={{fontSize:13, color:"#4ade80", marginTop:6, fontWeight:800}}>Profit: KES {totalProfit.toLocaleString()}</div></div>
                   <div style={{background:"#111", padding:12, borderRadius:8, border:"1px solid #333"}}><div style={{fontSize:11, opacity:0.7}}>TODAY SUMMARY</div><div style={{fontSize:13, marginTop:6}}>Sales Today: KES {salesToday.toLocaleString()}</div><div style={{fontSize:12}}>Profit Earned: KES {profitToday.toLocaleString()}</div><div style={{fontSize:11, marginTop:6}}>Yesterday: KES {(history[yesterdayKey]?.profit||0).toLocaleString()}</div></div>
-                  <div style={{background:"#facc15", color:"black", padding:14, borderRadius:10}}><div style={{fontSize:11, fontWeight:700}}>TODAY PROFIT (BIG)</div><div style={{fontSize:26, fontWeight:900, marginTop:4}}>KES {projectedProfitToday.toLocaleString()}</div><div style={{fontSize:11, marginTop:4}}>{cart.length>0? `After this cart: ${projectedProfitToday.toLocaleString()}` : "Total in pocket today"}</div></div>
+                  <div style={{background:"#facc15", color:"black", padding:14, borderRadius:10}}><div style={{fontSize:11, fontWeight:700}}>TODAY PROFIT (BIG)</div><div style={{fontSize:26, fontWeight:900, marginTop:4}}>KES {projectedProfitToday.toLocaleString()}</div></div>
                 </div>
               )}
               {calendarView==="week" && (
@@ -277,7 +315,6 @@ export default function Page() {
                         <div style={{fontSize:10, fontWeight:700}}>{d.date.toLocaleDateString('en-KE', {weekday:'short'})}</div>
                         <div style={{fontSize:9}}>{d.key.slice(5)}</div>
                         <div style={{fontSize:12, fontWeight:800, marginTop:4}}>{d.data? `KES ${d.data.profit.toLocaleString()}` : "KES 0"}</div>
-                        <div style={{fontSize:9}}>{d.data? `${d.data.count} sales` : "no sales"}</div>
                       </div>
                     ))}
                   </div>
@@ -286,9 +323,9 @@ export default function Page() {
               {calendarView==="month" && (
                 <div style={{marginTop:12}}>
                   <div style={{background:"linear-gradient(135deg,#facc15,#f59e0b)", color:"black", padding:16, borderRadius:12, display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10}}>
-                    <div><div style={{fontSize:11, fontWeight:700}}>MONTH: {todayKey.slice(0,7)}</div><div style={{fontSize:24, fontWeight:900}}>KES {month.mSales.toLocaleString()}</div><div style={{fontSize:11}}>Total Sales</div></div>
-                    <div><div style={{fontSize:11, fontWeight:700}}>TOTAL PROFIT</div><div style={{fontSize:24, fontWeight:900}}>KES {month.mProfit.toLocaleString()}</div><div style={{fontSize:11}}>Grand Total This Month</div></div>
-                    <div><div style={{fontSize:11, fontWeight:700}}>DAYS WORKED</div><div style={{fontSize:24, fontWeight:900}}>{month.entries.length || 1}</div><div style={{fontSize:11}}>Days with sales</div></div>
+                    <div><div style={{fontSize:11, fontWeight:700}}>MONTH: {todayKey.slice(0,7)}</div><div style={{fontSize:24, fontWeight:900}}>KES {month.mSales.toLocaleString()}</div></div>
+                    <div><div style={{fontSize:11, fontWeight:700}}>TOTAL PROFIT</div><div style={{fontSize:24, fontWeight:900}}>KES {month.mProfit.toLocaleString()}</div></div>
+                    <div><div style={{fontSize:11, fontWeight:700}}>DAYS WORKED</div><div style={{fontSize:24, fontWeight:900}}>{month.entries.length || 1}</div></div>
                   </div>
                 </div>
               )}
@@ -299,9 +336,9 @@ export default function Page() {
       )}
 
       <div className="no-print" style={{display:"grid", gridTemplateColumns:"2.2fr 1fr", gap:12}}>
-        <div style={{background:"white", borderRadius:12, padding:10}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={`Search ${items.length} items...`} style={{width:"100%", padding:12, borderRadius:8, border:"2px solid #e5e7eb", marginBottom:10}}/><div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, maxHeight:"75vh", overflowY:"auto"}}>{filtered.map(item=>(<div key={item.id} style={{display:"flex", justifyContent:"space-between", alignItems:"center", padding:10, border:"1px solid #eee", borderRadius:10}}><div style={{flex:1}}><div style={{fontWeight:700, fontSize:12}}>{item.name}</div><div style={{fontSize:10, color:"#666"}}>{item.category} • Stock {item.stock} • KES {item.sell}</div></div><button onClick={()=>addToCart(item)} style={{background:"#facc15", border:"none", padding:"6px 10px", borderRadius:8, fontWeight:800, fontSize:11, cursor:"pointer"}}>+</button></div>))}</div></div>
+        <div style={{background:"white", borderRadius:12, padding:10}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={`Search ${items.length} items in ${shopName}...`} style={{width:"100%", padding:12, borderRadius:8, border:"2px solid #e5e7eb", marginBottom:10}}/><div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, maxHeight:"75vh", overflowY:"auto"}}>{filtered.map(item=>(<div key={item.id} style={{display:"flex", justifyContent:"space-between", alignItems:"center", padding:10, border:"1px solid #eee", borderRadius:10}}><div style={{flex:1}}><div style={{fontWeight:700, fontSize:12}}>{item.name}</div><div style={{fontSize:10, color:"#666"}}>{item.category} • Stock {item.stock} • KES {item.sell}</div></div><button onClick={()=>addToCart(item)} style={{background:"#facc15", border:"none", padding:"6px 10px", borderRadius:8, fontWeight:800, fontSize:11, cursor:"pointer"}}>+</button></div>))}</div></div>
         <div style={{background:"white", borderRadius:12, padding:12, height:"fit-content", position:"sticky", top:10}}>
-          <h3 style={{marginTop:0}}>Cart - Bargain Allowed</h3>
+          <h3 style={{marginTop:0}}>Cart - {shopName}</h3>
           {cart.map(c=>(<div key={c.id} style={{borderBottom:"1px solid #eee", padding:"6px 0"}}><div style={{display:"flex", justifyContent:"space-between", fontSize:12}}><span>{c.name.slice(0,20)} x{c.qty}</span><button onClick={()=>setCart(prev=>prev.filter(p=>p.id!==c.id))} style={{background:"#fee", border:"none", borderRadius:4, fontSize:10}}>X</button></div><div style={{display:"flex", gap:6, marginTop:4, alignItems:"center"}}><span style={{fontSize:11}}>Price:</span><input type="number" value={getSellPrice(c)} onChange={e=>updateCartPrice(c.id, parseInt(e.target.value)||0)} style={{width:90, padding:4, borderRadius:6, border:"1px solid #000", fontWeight:800}}/><span style={{fontSize:12, fontWeight:800}}>= {getSellPrice(c)*c.qty}</span></div></div>))}
           {cart.length===0 && <div style={{fontSize:12, color:"#888"}}>Cart empty</div>}
           <h2 style={{margin:"10px 0 4px 0"}}>Total: KES {totalSell.toLocaleString()}</h2>
@@ -321,12 +358,11 @@ export default function Page() {
             <div style={{fontSize:14, color:"#000", fontWeight:900, letterSpacing:2}}>M-PESA CODE</div>
             <div style={{fontSize:34, fontWeight:900, letterSpacing:3, marginTop:8, fontFamily:"monospace"}}>{paidCode}</div>
           </div>
-          <p style={{marginTop:24, fontSize:13, color:"#9ca3af"}}>MUMIAS HARDWARE • {new Date().toLocaleString()}</p>
-          <p style={{marginTop:10, fontSize:12, color:"#16a34a", fontWeight:700}}>✅ Will show receipt in 5 seconds...</p>
+          <p style={{marginTop:24, fontSize:13, color:"#9ca3af"}}>{shopName} • {new Date().toLocaleString()}</p>
         </div>
       )}
 
-      {receipt && (<div className="no-print" style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", padding:20, zIndex:9999}}><div style={{background:"white", padding:18, borderRadius:12, maxWidth:360, width:"100%", fontFamily:"monospace"}}><h3 style={{textAlign:"center", margin:0}}>MUMIAS HARDWARE</h3><p style={{textAlign:"center", fontSize:12, margin:"4px 0"}}>{receipt.id}<br/>{receipt.date}<br/>{receipt.method} - {receipt.phone}<br/><strong style={{fontSize:14, background:"#fef9c3", padding:"4px 8px", borderRadius:6, display:"inline-block", marginTop:6}}>{receipt.mpesaCode? `CODE: ${receipt.mpesaCode}` : ""}</strong></p><hr/>{receipt.cart.map((c:any)=>(<div key={c.id} style={{display:"flex", justifyContent:"space-between", fontSize:11}}><span>{c.name.slice(0,25)} x{c.qty}</span><span>KES {c.sell*c.qty}</span></div>))}<hr/><div style={{display:"flex", justifyContent:"space-between", fontWeight:900, fontSize:14}}><span>TOTAL</span><span>KES {receipt.total.toLocaleString()}</span></div><p style={{textAlign:"center", fontSize:11, marginTop:10}}>Asante sana! Karibu tena!</p><button onClick={()=>window.print()} style={{width:"100%", background:"black", color:"white", padding:12, borderRadius:8, marginTop:10, border:"none", fontWeight:800}}>🖨️ PRINT</button><button onClick={closeReceipt} style={{width:"100%", background:"#2563eb", color:"white", padding:10, borderRadius:8, marginTop:6, border:"none"}}>New Sale</button></div></div>)}
+      {receipt && (<div className="no-print" style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", padding:20, zIndex:9999}}><div style={{background:"white", padding:18, borderRadius:12, maxWidth:360, width:"100%", fontFamily:"monospace"}}><h3 style={{textAlign:"center", margin:0}}>{shopName.toUpperCase()}</h3><p style={{textAlign:"center", fontSize:12, margin:"4px 0"}}>{receipt.id}<br/>{receipt.date}<br/>{receipt.method} - {receipt.phone}<br/><strong style={{fontSize:14, background:"#fef9c3", padding:"4px 8px", borderRadius:6, display:"inline-block", marginTop:6}}>{receipt.mpesaCode? `CODE: ${receipt.mpesaCode}` : ""}</strong></p><hr/>{receipt.cart.map((c:any)=>(<div key={c.id} style={{display:"flex", justifyContent:"space-between", fontSize:11}}><span>{c.name.slice(0,25)} x{c.qty}</span><span>KES {c.sell*c.qty}</span></div>))}<hr/><div style={{display:"flex", justifyContent:"space-between", fontWeight:900, fontSize:14}}><span>TOTAL</span><span>KES {receipt.total.toLocaleString()}</span></div><p style={{textAlign:"center", fontSize:11, marginTop:10}}>Asante sana! Karibu tena!</p><button onClick={()=>window.print()} style={{width:"100%", background:"black", color:"white", padding:12, borderRadius:8, marginTop:10, border:"none", fontWeight:800}}>🖨️ PRINT</button><button onClick={closeReceipt} style={{width:"100%", background:"#2563eb", color:"white", padding:10, borderRadius:8, marginTop:6, border:"none"}}>New Sale</button></div></div>)}
     </main>
   );
 }
