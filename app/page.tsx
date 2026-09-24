@@ -95,7 +95,6 @@ export default function Page() {
   const [calendarView, setCalendarView] = useState<"today"|"week"|"month">("today");
   const [pin, setPin] = useState("");
   const [newItem, setNewItem] = useState({ name: "", buy: "", sell: "", stock: "", category: "General" });
-  // NEW: Success screen states
   const [showPaid, setShowPaid] = useState(false);
   const [paidCode, setPaidCode] = useState("");
   const [paidAmount, setPaidAmount] = useState(0);
@@ -183,18 +182,15 @@ export default function Page() {
       });
       const data = await resp.json();
       if(!resp.ok) throw new Error(data.error || "STK failed");
-
       const checkoutId = data.CheckoutRequestID;
       setStatus("✅ STK Sent! Enter PIN...");
 
-      // POLL FOR REAL PAYMENT
       for(let i=0;i<20;i++){
         await new Promise(r=>setTimeout(r,3000));
-        setStatus(`⏳ Waiting for M-Pesa... ${i+1}/20`);
+        setStatus(`⏳ Waiting M-Pesa... ${i+1}/20`);
         const poll = await fetch('/api/mpesa/callback');
         const tx = await poll.json();
         if(tx?.mpesaCode && tx?.checkoutId === checkoutId){
-          // SUCCESS!
           setPaidCode(tx.mpesaCode);
           setPaidAmount(tx.amount);
           setShowPaid(true);
@@ -203,12 +199,12 @@ export default function Page() {
           setTimeout(()=>{
             setShowPaid(false);
             completeSale("M-PESA", tx.mpesaCode, tx.amount);
-          }, 3500);
+          }, 5000);
           return;
         }
       }
-      setStatus("⚠️ Not confirmed yet. Check SMS. Completing as M-PESA");
-      completeSale("M-PESA", "PENDING", totalSell);
+      setStatus("⚠️ Not confirmed yet. Check SMS.");
+      completeSale("M-PESA", "PENDING - CHECK SMS", totalSell);
       setLoading(false);
     }catch(e:any){
       alert(e.message);
@@ -294,13 +290,6 @@ export default function Page() {
                     <div><div style={{fontSize:11, fontWeight:700}}>TOTAL PROFIT</div><div style={{fontSize:24, fontWeight:900}}>KES {month.mProfit.toLocaleString()}</div><div style={{fontSize:11}}>Grand Total This Month</div></div>
                     <div><div style={{fontSize:11, fontWeight:700}}>DAYS WORKED</div><div style={{fontSize:24, fontWeight:900}}>{month.entries.length || 1}</div><div style={{fontSize:11}}>Days with sales</div></div>
                   </div>
-                  <div style={{marginTop:10, maxHeight:200, overflowY:"auto", background:"#111", borderRadius:8, padding:8}}>
-                    {Object.entries(history).sort().reverse().slice(0,31).map(([k,v])=>(
-                      <div key={k} style={{display:"flex", justifyContent:"space-between", padding:"6px 0", borderBottom:"1px solid #222", fontSize:12}}>
-                        <span>{k} {k===todayKey?"(Today)": k===yesterdayKey?"(Yesterday)":""}</span><span>Sales {v.sales.toLocaleString()}</span><span style={{color:"#4ade80", fontWeight:700}}>Profit {v.profit.toLocaleString()}</span>
-                      </div>
-                    ))}
-                  </div>
                 </div>
               )}
               <button onClick={()=>{setShowProfit(false); setPin("");}} style={{background:"#facc15", color:"black", padding:"8px 16px", borderRadius:8, fontWeight:800, border:"none", marginTop:12}}>Lock 🔒</button>
@@ -323,21 +312,21 @@ export default function Page() {
         </div>
       </div>
 
-      {/* SUCCESS POPUP - NEW */}
       {showPaid && (
-        <div className="no-print" style={{position:"fixed", inset:0, background:"rgba(255,255,255,0.98)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", zIndex:10000, padding:20}}>
-          <div style={{width:110, height:110, background:"#22c55e", borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:60, color:"white", fontWeight:900}}>✓</div>
-          <h1 style={{fontSize:36, fontWeight:900, color:"#16a34a", marginTop:20, textAlign:"center"}}>PAYMENT SUCCESSFUL!</h1>
-          <p style={{fontSize:28, fontWeight:800, marginTop:10}}>KES {paidAmount.toLocaleString()}</p>
-          <div style={{marginTop:20, background:"#f3f4f6", padding:"14px 32px", borderRadius:12, textAlign:"center"}}>
-            <div style={{fontSize:11, color:"#6b7280", letterSpacing:1}}>M-PESA CODE</div>
-            <div style={{fontSize:26, fontWeight:900, letterSpacing:2, marginTop:4}}>{paidCode}</div>
+        <div className="no-print" style={{position:"fixed", inset:0, background:"white", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", zIndex:10000, padding:20}}>
+          <div style={{width:120, height:120, background:"#22c55e", borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:70, color:"white", fontWeight:900}}>✓</div>
+          <h1 style={{fontSize:38, fontWeight:900, color:"#16a34a", marginTop:20, textAlign:"center"}}>PAYMENT SUCCESSFUL!</h1>
+          <p style={{fontSize:30, fontWeight:800, marginTop:12}}>KES {paidAmount.toLocaleString()}</p>
+          <div style={{marginTop:24, background:"#fef9c3", border:"4px solid #facc15", padding:"18px 36px", borderRadius:16, textAlign:"center", minWidth:280}}>
+            <div style={{fontSize:14, color:"#000", fontWeight:900, letterSpacing:2}}>M-PESA CODE</div>
+            <div style={{fontSize:34, fontWeight:900, letterSpacing:3, marginTop:8, fontFamily:"monospace"}}>{paidCode}</div>
           </div>
-          <p style={{marginTop:20, fontSize:12, color:"#9ca3af"}}>MUMIAS HARDWARE • {new Date().toLocaleString()}</p>
+          <p style={{marginTop:24, fontSize:13, color:"#9ca3af"}}>MUMIAS HARDWARE • {new Date().toLocaleString()}</p>
+          <p style={{marginTop:10, fontSize:12, color:"#16a34a", fontWeight:700}}>✅ Will show receipt in 5 seconds...</p>
         </div>
       )}
 
-      {receipt && (<div className="no-print" style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", padding:20, zIndex:9999}}><div style={{background:"white", padding:18, borderRadius:12, maxWidth:360, width:"100%", fontFamily:"monospace"}}><h3 style={{textAlign:"center", margin:0}}>MUMIAS HARDWARE</h3><p style={{textAlign:"center", fontSize:12, margin:"4px 0"}}>{receipt.id}<br/>{receipt.date}<br/>{receipt.method} - {receipt.phone}<br/><strong style={{fontSize:13}}>{receipt.mpesaCode? `CODE: ${receipt.mpesaCode}` : ""}</strong></p><hr/>{receipt.cart.map((c:any)=>(<div key={c.id} style={{display:"flex", justifyContent:"space-between", fontSize:11}}><span>{c.name.slice(0,25)} x{c.qty}</span><span>KES {c.sell*c.qty}</span></div>))}<hr/><div style={{display:"flex", justifyContent:"space-between", fontWeight:900, fontSize:14}}><span>TOTAL</span><span>KES {receipt.total.toLocaleString()}</span></div><p style={{textAlign:"center", fontSize:11, marginTop:10}}>Asante sana! Karibu tena!</p><button onClick={()=>window.print()} style={{width:"100%", background:"black", color:"white", padding:12, borderRadius:8, marginTop:10, border:"none", fontWeight:800}}>🖨️ PRINT</button><button onClick={closeReceipt} style={{width:"100%", background:"#2563eb", color:"white", padding:10, borderRadius:8, marginTop:6, border:"none"}}>New Sale</button></div></div>)}
+      {receipt && (<div className="no-print" style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", padding:20, zIndex:9999}}><div style={{background:"white", padding:18, borderRadius:12, maxWidth:360, width:"100%", fontFamily:"monospace"}}><h3 style={{textAlign:"center", margin:0}}>MUMIAS HARDWARE</h3><p style={{textAlign:"center", fontSize:12, margin:"4px 0"}}>{receipt.id}<br/>{receipt.date}<br/>{receipt.method} - {receipt.phone}<br/><strong style={{fontSize:14, background:"#fef9c3", padding:"4px 8px", borderRadius:6, display:"inline-block", marginTop:6}}>{receipt.mpesaCode? `CODE: ${receipt.mpesaCode}` : ""}</strong></p><hr/>{receipt.cart.map((c:any)=>(<div key={c.id} style={{display:"flex", justifyContent:"space-between", fontSize:11}}><span>{c.name.slice(0,25)} x{c.qty}</span><span>KES {c.sell*c.qty}</span></div>))}<hr/><div style={{display:"flex", justifyContent:"space-between", fontWeight:900, fontSize:14}}><span>TOTAL</span><span>KES {receipt.total.toLocaleString()}</span></div><p style={{textAlign:"center", fontSize:11, marginTop:10}}>Asante sana! Karibu tena!</p><button onClick={()=>window.print()} style={{width:"100%", background:"black", color:"white", padding:12, borderRadius:8, marginTop:10, border:"none", fontWeight:800}}>🖨️ PRINT</button><button onClick={closeReceipt} style={{width:"100%", background:"#2563eb", color:"white", padding:10, borderRadius:8, marginTop:6, border:"none"}}>New Sale</button></div></div>)}
     </main>
   );
 }
