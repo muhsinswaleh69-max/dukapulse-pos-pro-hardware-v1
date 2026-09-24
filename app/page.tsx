@@ -105,6 +105,9 @@ export default function Page() {
   const [newP, setNewP] = useState({name:"", buy:"", sell:"", stock:"", category:"Cement"});
   const [ownerPinPrompt, setOwnerPinPrompt] = useState(false);
   const [ownerPinInput, setOwnerPinInput] = useState("");
+  const [ownerPin, setOwnerPin] = useState("1234");
+  const [showChangePin, setShowChangePin] = useState(false);
+  const [changePinData, setChangePinData] = useState({oldPin:"", newPin:"", confirmPin:""});
 
   useEffect(()=>{
     const savedShop = localStorage.getItem("dukapulse_current_shop");
@@ -118,11 +121,15 @@ export default function Page() {
     const profitKey = `dukapulse_${shopId}_profit_today_v6`;
     const histKey = `dukapulse_${shopId}_history_v6`;
     const dateKey = `dukapulse_${shopId}_last_date_v6`;
+    const pinKey = `dukapulse_${shopId}_owner_pin_v6`;
     const saved = localStorage.getItem(stockKey);
     const savedSales = localStorage.getItem(salesKey);
     const savedProfit = localStorage.getItem(profitKey);
     const savedHist = localStorage.getItem(histKey);
     const savedDate = localStorage.getItem(dateKey);
+    const savedPin = localStorage.getItem(pinKey);
+    if(savedPin) setOwnerPin(savedPin);
+    else setOwnerPin("1234");
     const today = getTodayKey();
     if(saved){ try{ const p=JSON.parse(saved); if(p.length>0) setItems(p);}catch{ setItems(INITIAL_ITEMS); } } else { setItems(INITIAL_ITEMS); }
     if(savedHist){ try{ setHistory(JSON.parse(savedHist)); }catch{} }
@@ -147,6 +154,11 @@ export default function Page() {
     setHistory(newHist);
     localStorage.setItem(`dukapulse_${shopId}_history_v6`, JSON.stringify(newHist));
   };
+  const saveOwnerPin = (newPin: string) => {
+    if(!shopId) return;
+    setOwnerPin(newPin);
+    localStorage.setItem(`dukapulse_${shopId}_owner_pin_v6`, newPin);
+  };
 
   const handleLogin = () => {
     if(!loginInput.trim()) return alert("Enter shop name e.g. Mumias Hardware");
@@ -158,27 +170,33 @@ export default function Page() {
   const handleLogout = () => {
     if(confirm("Logout from this shop? Data will stay safe.")){
       localStorage.removeItem("dukapulse_current_shop");
-      setShopId(null); setCart([]); setShopName("");
+      setShopId(null); setCart([]); setShopName(""); setIsOwnerMode(false);
     }
   };
 
-  // 🔒 LOCKED OWNER MODE WITH PIN
   const tryEnterOwnerMode = () => {
-    if(isOwnerMode){
-      setIsOwnerMode(false);
-      return;
-    }
+    if(isOwnerMode){ setIsOwnerMode(false); return; }
     setOwnerPinPrompt(true);
   };
   const confirmOwnerPin = () => {
-    if(ownerPinInput === "1234"){
+    if(ownerPinInput === ownerPin){
       setIsOwnerMode(true);
       setOwnerPinPrompt(false);
       setOwnerPinInput("");
     } else {
-      alert("Wrong PIN! Only owner can restock. PIN is 1234");
+      alert("Wrong PIN! Only owner knows PIN.");
       setOwnerPinInput("");
     }
+  };
+
+  const handleChangePin = () => {
+    if(changePinData.oldPin!== ownerPin) return alert("Old PIN is wrong!");
+    if(changePinData.newPin.length < 4) return alert("New PIN must be at least 4 digits!");
+    if(changePinData.newPin!== changePinData.confirmPin) return alert("New PINs don't match!");
+    saveOwnerPin(changePinData.newPin);
+    setChangePinData({oldPin:"", newPin:"", confirmPin:""});
+    setShowChangePin(false);
+    alert(`✅ PIN CHANGED! New PIN is ${changePinData.newPin}. Remember it!`);
   };
 
   const handleRestock = (id: number) => {
@@ -193,16 +211,8 @@ export default function Page() {
 
   const handleAddNewProduct = () => {
     if(!newP.name ||!newP.buy ||!newP.sell ||!newP.stock) return alert("Fill all fields");
-    const newItem: Item = {
-      id: Date.now(),
-      name: newP.name,
-      buy: parseInt(newP.buy),
-      sell: parseInt(newP.sell),
-      stock: parseInt(newP.stock),
-      category: newP.category
-    };
-    const newItems = [...items, newItem];
-    saveStock(newItems);
+    const newItem: Item = { id: Date.now(), name: newP.name, buy: parseInt(newP.buy), sell: parseInt(newP.sell), stock: parseInt(newP.stock), category: newP.category };
+    saveStock([...items, newItem]);
     setNewP({name:"", buy:"", sell:"", stock:"", category:"Cement"});
     setShowAddForm(false);
     alert(`✅ NEW PRODUCT ADDED! ${newItem.name} now in your shop!`);
@@ -250,11 +260,7 @@ export default function Page() {
     setLoading(true);
     setStatus("STK Push to "+mpesaPhone+"...");
     try{
-      const resp = await fetch("/api/mpesa", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({phone: mpesaPhone, amount: totalSell, shopId})
-      });
+      const resp = await fetch("/api/mpesa", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({phone: mpesaPhone, amount: totalSell, shopId}) });
       const data = await resp.json();
       if(!resp.ok) throw new Error(data.error || "STK failed");
       const checkoutId = data.CheckoutRequestID;
@@ -265,26 +271,13 @@ export default function Page() {
         const poll = await fetch('/api/mpesa/callback');
         const tx = await poll.json();
         if(tx?.mpesaCode && tx?.checkoutId === checkoutId){
-          setPaidCode(tx.mpesaCode);
-          setPaidAmount(tx.amount);
-          setShowPaid(true);
-          setLoading(false);
-          setStatus("✅ PAYMENT SUCCESSFUL!");
-          setTimeout(()=>{
-            setShowPaid(false);
-            completeSale("M-PESA", tx.mpesaCode, tx.amount);
-          }, 5000);
+          setPaidCode(tx.mpesaCode); setPaidAmount(tx.amount); setShowPaid(true); setLoading(false); setStatus("✅ PAYMENT SUCCESSFUL!");
+          setTimeout(()=>{ setShowPaid(false); completeSale("M-PESA", tx.mpesaCode, tx.amount); }, 5000);
           return;
         }
       }
-      setStatus("⚠️ Not confirmed yet. Check SMS.");
-      completeSale("M-PESA", "PENDING - CHECK SMS", totalSell);
-      setLoading(false);
-    }catch(e:any){
-      alert(e.message);
-      setLoading(false);
-      setStatus("Failed");
-    }
+      setStatus("⚠️ Not confirmed yet. Check SMS."); completeSale("M-PESA", "PENDING - CHECK SMS", totalSell); setLoading(false);
+    }catch(e:any){ alert(e.message); setLoading(false); setStatus("Failed"); }
   };
   const completeSale = (method: string, mpesaCode: string, amount: number) => {
     if(!shopId) return;
@@ -314,7 +307,6 @@ export default function Page() {
       <main style={{fontFamily:"system-ui", minHeight:"100vh", background:"linear-gradient(135deg,#000,#2563eb)", display:"flex", alignItems:"center", justifyContent:"center", padding:20}}>
         <div style={{background:"white", padding:30, borderRadius:16, maxWidth:420, width:"100%", textAlign:"center"}}>
           <h1 style={{margin:0, fontWeight:900, fontSize:22}}>DUKAPULSE - LOGIN</h1>
-          <p style={{fontSize:12, color:"#666", marginTop:6}}>Each hardware has own isolated data. No mixing.</p>
           <input value={loginInput} onChange={e=>setLoginInput(e.target.value)} placeholder="Enter Shop Name e.g. Mumias Hardware" style={{width:"100%", padding:14, borderRadius:10, border:"2px solid black", marginTop:20, fontWeight:700}}/>
           <button onClick={handleLogin} style={{width:"100%", background:"black", color:"white", padding:14, borderRadius:10, fontWeight:900, marginTop:12, border:"none", cursor:"pointer"}}>OPEN MY SHOP →</button>
         </div>
@@ -334,18 +326,34 @@ export default function Page() {
           </div>
         </div>
         <div style={{display:"flex", gap:6, marginTop:10, flexWrap:"wrap"}}>{["All",...Array.from(new Set(items.map(i=>i.category)))].map(cat=>(<button key={cat} onClick={()=>setCategory(cat)} style={{background: category===cat?"white":"rgba(255,255,255,0.2)", color: category===cat?"black":"white", border:"none", padding:"6px 12px", borderRadius:20, fontSize:11, fontWeight:700, cursor:"pointer"}}>{cat}</button>))}</div>
-        {isOwnerMode && <div style={{marginTop:10, background:"#facc15", color:"black", padding:"8px 12px", borderRadius:8, fontSize:12, fontWeight:700, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8}}><span>🔓 OWNER MODE UNLOCKED: Restock + Add New Products!</span><button onClick={()=>setShowAddForm(true)} style={{background:"black", color:"#facc15", border:"none", padding:"6px 14px", borderRadius:20, fontWeight:900, fontSize:12, cursor:"pointer"}}>➕ ADD NEW PRODUCT</button></div>}
+        {isOwnerMode && <div style={{marginTop:10, background:"#facc15", color:"black", padding:"8px 12px", borderRadius:8, fontSize:12, fontWeight:700, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8}}><span>🔓 OWNER MODE UNLOCKED</span><div style={{display:"flex", gap:6}}><button onClick={()=>setShowAddForm(true)} style={{background:"black", color:"#facc15", border:"none", padding:"6px 14px", borderRadius:20, fontWeight:900, fontSize:12, cursor:"pointer"}}>➕ ADD NEW PRODUCT</button><button onClick={()=>setShowChangePin(true)} style={{background:"white", color:"black", border:"1px solid black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>🔑 Change PIN</button></div></div>}
       </div>
 
       {ownerPinPrompt && (
         <div className="no-print" style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9998, padding:20}}>
           <div style={{background:"white", padding:20, borderRadius:12, maxWidth:340, width:"100%"}}>
             <h3 style={{margin:"0 0 10px 0"}}>🔒 Owner PIN Required</h3>
-            <p style={{fontSize:12, color:"#666"}}>Enter owner PIN to access restock. Workers cannot access.</p>
-            <input type="password" value={ownerPinInput} onChange={e=>setOwnerPinInput(e.target.value)} placeholder="PIN is 1234" style={{width:"100%", padding:12, borderRadius:8, border:"2px solid black", marginTop:10}}/>
+            <p style={{fontSize:12, color:"#666"}}>Only owner can access. Workers cannot see.</p>
+            <input type="password" value={ownerPinInput} onChange={e=>setOwnerPinInput(e.target.value)} placeholder="Enter PIN ••••" style={{width:"100%", padding:12, borderRadius:8, border:"2px solid black", marginTop:10}}/>
             <div style={{display:"flex", gap:8, marginTop:12}}>
               <button onClick={confirmOwnerPin} style={{flex:1, background:"black", color:"white", padding:12, borderRadius:8, fontWeight:800, border:"none", cursor:"pointer"}}>UNLOCK OWNER MODE</button>
               <button onClick={()=>{setOwnerPinPrompt(false); setOwnerPinInput("");}} style={{padding:12, borderRadius:8, border:"1px solid #ccc", background:"white", cursor:"pointer"}}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showChangePin && (
+        <div className="no-print" style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999, padding:20}}>
+          <div style={{background:"white", padding:20, borderRadius:12, maxWidth:360, width:"100%"}}>
+            <h3 style={{margin:"0 0 10px 0"}}>🔑 Change Owner PIN - {shopName}</h3>
+            <p style={{fontSize:11, color:"#666"}}>This PIN works for Profit + Owner Mode. Saved per shop. Default is 1234.</p>
+            <input type="password" value={changePinData.oldPin} onChange={e=>setChangePinData({...changePinData, oldPin:e.target.value})} placeholder="Old PIN ••••" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginTop:10}}/>
+            <input type="password" value={changePinData.newPin} onChange={e=>setChangePinData({...changePinData, newPin:e.target.value})} placeholder="New PIN •••• (min 4 digits)" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginTop:8}}/>
+            <input type="password" value={changePinData.confirmPin} onChange={e=>setChangePinData({...changePinData, confirmPin:e.target.value})} placeholder="Confirm New PIN ••••" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginTop:8}}/>
+            <div style={{display:"flex", gap:8, marginTop:12}}>
+              <button onClick={handleChangePin} style={{flex:1, background:"#16a34a", color:"white", padding:12, borderRadius:8, fontWeight:800, border:"none", cursor:"pointer"}}>SAVE NEW PIN</button>
+              <button onClick={()=>{setShowChangePin(false); setChangePinData({oldPin:"", newPin:"", confirmPin:""});}} style={{padding:12, borderRadius:8, border:"1px solid #ccc", background:"white", cursor:"pointer"}}>Cancel</button>
             </div>
           </div>
         </div>
@@ -355,10 +363,10 @@ export default function Page() {
         <div className="no-print" style={{background:"white", padding:16, borderRadius:12, marginBottom:12, border:"2px solid black"}}>
           <h3 style={{margin:"0 0 10px 0"}}>➕ Add New Product - {shopName}</h3>
           <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8}}>
-            <input value={newP.name} onChange={e=>setNewP({...newP, name:e.target.value})} placeholder="Product Name e.g. Cement - Rhino 50kg" style={{padding:10, borderRadius:8, border:"1px solid #ccc", gridColumn:"1 / -1"}}/>
-            <input type="number" value={newP.buy} onChange={e=>setNewP({...newP, buy:e.target.value})} placeholder="Buy Price e.g. 600" style={{padding:10, borderRadius:8, border:"1px solid #ccc"}}/>
-            <input type="number" value={newP.sell} onChange={e=>setNewP({...newP, sell:e.target.value})} placeholder="Sell Price e.g. 750" style={{padding:10, borderRadius:8, border:"1px solid #ccc"}}/>
-            <input type="number" value={newP.stock} onChange={e=>setNewP({...newP, stock:e.target.value})} placeholder="Initial Stock e.g. 100" style={{padding:10, borderRadius:8, border:"1px solid #ccc"}}/>
+            <input value={newP.name} onChange={e=>setNewP({...newP, name:e.target.value})} placeholder="Product Name" style={{padding:10, borderRadius:8, border:"1px solid #ccc", gridColumn:"1 / -1"}}/>
+            <input type="number" value={newP.buy} onChange={e=>setNewP({...newP, buy:e.target.value})} placeholder="Buy Price" style={{padding:10, borderRadius:8, border:"1px solid #ccc"}}/>
+            <input type="number" value={newP.sell} onChange={e=>setNewP({...newP, sell:e.target.value})} placeholder="Sell Price" style={{padding:10, borderRadius:8, border:"1px solid #ccc"}}/>
+            <input type="number" value={newP.stock} onChange={e=>setNewP({...newP, stock:e.target.value})} placeholder="Initial Stock" style={{padding:10, borderRadius:8, border:"1px solid #ccc"}}/>
             <select value={newP.category} onChange={e=>setNewP({...newP, category:e.target.value})} style={{padding:10, borderRadius:8, border:"1px solid #ccc"}}>
               {["Cement","Iron Sheets","Nails","Timber","Paint","Plumbing","Electrical","Fittings","Tools","Steel","Fencing","Aggregates"].map(c=><option key={c} value={c}>{c}</option>)}
             </select>
@@ -372,8 +380,8 @@ export default function Page() {
 
       {showProfit && (
         <div className="no-print" style={{background:"#000", color:"#facc15", padding:16, borderRadius:12, marginBottom:12, border:"2px solid #facc15"}}>
-          {pin!=="1234"? (
-            <div><h3>🔒 Owner PIN</h3><div style={{display:"flex", gap:8}}><input type="password" value={pin} onChange={e=>setPin(e.target.value)} placeholder="1234" style={{padding:10, borderRadius:8, flex:1}}/><button onClick={()=>{if(pin!=="1234") alert("Wrong PIN!");}} style={{padding:"10px 15px", borderRadius:8, background:"#facc15", fontWeight:800}}>Unlock</button><button onClick={()=>setShowProfit(false)} style={{padding:"10px 15px", borderRadius:8}}>Close</button></div></div>
+          {pin!==ownerPin? (
+            <div><h3>🔒 Owner PIN</h3><div style={{display:"flex", gap:8}}><input type="password" value={pin} onChange={e=>setPin(e.target.value)} placeholder="Enter PIN ••••" style={{padding:10, borderRadius:8, flex:1}}/><button onClick={()=>{if(pin!==ownerPin) alert("Wrong PIN!");}} style={{padding:"10px 15px", borderRadius:8, background:"#facc15", fontWeight:800}}>Unlock</button><button onClick={()=>setShowProfit(false)} style={{padding:"10px 15px", borderRadius:8}}>Close</button></div></div>
           ) : (
             <div>
               <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
@@ -452,21 +460,6 @@ export default function Page() {
           <button onClick={()=>setCart([])} style={{width:"100%", marginTop:6, background:"#f3f4f6", border:"none", padding:9, borderRadius:8, cursor:"pointer"}}>Clear</button>
         </div>
       </div>
-
-      {showPaid && (
-        <div className="no-print" style={{position:"fixed", inset:0, background:"white", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", zIndex:10000, padding:20}}>
-          <div style={{width:120, height:120, background:"#22c55e", borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:70, color:"white", fontWeight:900}}>✓</div>
-          <h1 style={{fontSize:38, fontWeight:900, color:"#16a34a", marginTop:20, textAlign:"center"}}>PAYMENT SUCCESSFUL!</h1>
-          <p style={{fontSize:30, fontWeight:800, marginTop:12}}>KES {paidAmount.toLocaleString()}</p>
-          <div style={{marginTop:24, background:"#fef9c3", border:"4px solid #facc15", padding:"18px 36px", borderRadius:16, textAlign:"center", minWidth:280}}>
-            <div style={{fontSize:14, color:"#000", fontWeight:900, letterSpacing:2}}>M-PESA CODE</div>
-            <div style={{fontSize:34, fontWeight:900, letterSpacing:3, marginTop:8, fontFamily:"monospace"}}>{paidCode}</div>
-          </div>
-          <p style={{marginTop:24, fontSize:13, color:"#9ca3af"}}>{shopName} • {new Date().toLocaleString()}</p>
-        </div>
-      )}
-
-      {receipt && (<div className="no-print" style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", padding:20, zIndex:9999}}><div style={{background:"white", padding:18, borderRadius:12, maxWidth:360, width:"100%", fontFamily:"monospace"}}><h3 style={{textAlign:"center", margin:0}}>{shopName.toUpperCase()}</h3><p style={{textAlign:"center", fontSize:12, margin:"4px 0"}}>{receipt.id}<br/>{receipt.date}<br/>{receipt.method} - {receipt.phone}<br/><strong style={{fontSize:14, background:"#fef9c3", padding:"4px 8px", borderRadius:6, display:"inline-block", marginTop:6}}>{receipt.mpesaCode? `CODE: ${receipt.mpesaCode}` : ""}</strong></p><hr/>{receipt.cart.map((c:any)=>(<div key={c.id} style={{display:"flex", justifyContent:"space-between", fontSize:11}}><span>{c.name.slice(0,25)} x{c.qty}</span><span>KES {c.sell*c.qty}</span></div>))}<hr/><div style={{display:"flex", justifyContent:"space-between", fontWeight:900, fontSize:14}}><span>TOTAL</span><span>KES {receipt.total.toLocaleString()}</span></div><p style={{textAlign:"center", fontSize:11, marginTop:10}}>Asante sana! Karibu tena!</p><button onClick={()=>window.print()} style={{width:"100%", background:"black", color:"white", padding:12, borderRadius:8, marginTop:10, border:"none", fontWeight:800}}>🖨️ PRINT</button><button onClick={closeReceipt} style={{width:"100%", background:"#2563eb", color:"white", padding:10, borderRadius:8, marginTop:6, border:"none"}}>New Sale</button></div></div>)}
     </main>
   );
 }
