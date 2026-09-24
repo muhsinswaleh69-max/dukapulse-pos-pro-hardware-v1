@@ -99,9 +99,10 @@ export default function Page() {
   const [paidCode, setPaidCode] = useState("");
   const [paidAmount, setPaidAmount] = useState(0);
   const [loginInput, setLoginInput] = useState("");
-  // RESTOCK FREEDOM STATES
   const [isOwnerMode, setIsOwnerMode] = useState(false);
   const [restockInputs, setRestockInputs] = useState<Record<number, string>>({});
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newP, setNewP] = useState({name:"", buy:"", sell:"", stock:"", category:"Cement"});
 
   useEffect(()=>{
     const savedShop = localStorage.getItem("dukapulse_current_shop");
@@ -159,7 +160,6 @@ export default function Page() {
     }
   };
 
-  // === OWNER RESTOCK FUNCTION - FREEDOM ===
   const handleRestock = (id: number) => {
     const addStr = restockInputs[id] || "0";
     const addQty = parseInt(addStr);
@@ -168,6 +168,23 @@ export default function Page() {
     saveStock(newItems);
     setRestockInputs(prev => ({...prev, [id]: ""}));
     alert(`✅ RESTOCKED! Added ${addQty}. New stock updated!`);
+  };
+
+  const handleAddNewProduct = () => {
+    if(!newP.name ||!newP.buy ||!newP.sell ||!newP.stock) return alert("Fill all fields");
+    const newItem: Item = {
+      id: Date.now(),
+      name: newP.name,
+      buy: parseInt(newP.buy),
+      sell: parseInt(newP.sell),
+      stock: parseInt(newP.stock),
+      category: newP.category
+    };
+    const newItems = [...items, newItem];
+    saveStock(newItems);
+    setNewP({name:"", buy:"", sell:"", stock:"", category:"Cement"});
+    setShowAddForm(false);
+    alert(`✅ NEW PRODUCT ADDED! ${newItem.name} now in your shop!`);
   };
 
   const categories = ["All",...Array.from(new Set(items.map(i=>i.category)))];
@@ -297,8 +314,27 @@ export default function Page() {
           </div>
         </div>
         <div style={{display:"flex", gap:6, marginTop:10, flexWrap:"wrap"}}>{["All",...Array.from(new Set(items.map(i=>i.category)))].map(cat=>(<button key={cat} onClick={()=>setCategory(cat)} style={{background: category===cat?"white":"rgba(255,255,255,0.2)", color: category===cat?"black":"white", border:"none", padding:"6px 12px", borderRadius:20, fontSize:11, fontWeight:700, cursor:"pointer"}}>{cat}</button>))}</div>
-        {isOwnerMode && <div style={{marginTop:10, background:"#facc15", color:"black", padding:"8px 12px", borderRadius:8, fontSize:12, fontWeight:700}}>📦 OWNER MODE ACTIVE: Owners can now restock their own products at fingertips! Type qty + click RESTOCK.</div>}
+        {isOwnerMode && <div style={{marginTop:10, background:"#facc15", color:"black", padding:"8px 12px", borderRadius:8, fontSize:12, fontWeight:700, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8}}><span>📦 OWNER MODE ACTIVE: Restock + Add New Products at fingertips!</span><button onClick={()=>setShowAddForm(true)} style={{background:"black", color:"#facc15", border:"none", padding:"6px 14px", borderRadius:20, fontWeight:900, fontSize:12, cursor:"pointer"}}>➕ ADD NEW PRODUCT</button></div>}
       </div>
+
+      {isOwnerMode && showAddForm && (
+        <div className="no-print" style={{background:"white", padding:16, borderRadius:12, marginBottom:12, border:"2px solid black"}}>
+          <h3 style={{margin:"0 0 10px 0"}}>➕ Add New Product - {shopName}</h3>
+          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8}}>
+            <input value={newP.name} onChange={e=>setNewP({...newP, name:e.target.value})} placeholder="Product Name e.g. Cement - Rhino 50kg" style={{padding:10, borderRadius:8, border:"1px solid #ccc", gridColumn:"1 / -1"}}/>
+            <input type="number" value={newP.buy} onChange={e=>setNewP({...newP, buy:e.target.value})} placeholder="Buy Price e.g. 600" style={{padding:10, borderRadius:8, border:"1px solid #ccc"}}/>
+            <input type="number" value={newP.sell} onChange={e=>setNewP({...newP, sell:e.target.value})} placeholder="Sell Price e.g. 750" style={{padding:10, borderRadius:8, border:"1px solid #ccc"}}/>
+            <input type="number" value={newP.stock} onChange={e=>setNewP({...newP, stock:e.target.value})} placeholder="Initial Stock e.g. 100" style={{padding:10, borderRadius:8, border:"1px solid #ccc"}}/>
+            <select value={newP.category} onChange={e=>setNewP({...newP, category:e.target.value})} style={{padding:10, borderRadius:8, border:"1px solid #ccc"}}>
+              {["Cement","Iron Sheets","Nails","Timber","Paint","Plumbing","Electrical","Fittings","Tools","Steel","Fencing","Aggregates"].map(c=><option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div style={{display:"flex", gap:8, marginTop:10}}>
+            <button onClick={handleAddNewProduct} style={{background:"#16a34a", color:"white", border:"none", padding:"10px 20px", borderRadius:8, fontWeight:800, cursor:"pointer"}}>SAVE PRODUCT</button>
+            <button onClick={()=>setShowAddForm(false)} style={{background:"#eee", border:"none", padding:"10px 20px", borderRadius:8, fontWeight:700, cursor:"pointer"}}>Cancel</button>
+          </div>
+        </div>
+      )}
 
       {showProfit && (
         <div className="no-print" style={{background:"#000", color:"#facc15", padding:16, borderRadius:12, marginBottom:12, border:"2px solid #facc15"}}>
