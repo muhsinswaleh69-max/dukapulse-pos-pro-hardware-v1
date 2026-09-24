@@ -112,6 +112,8 @@ export default function Page() {
   const [expiry, setExpiry] = useState("");
   const [adminCode, setAdminCode] = useState("");
   const [subCodeInput, setSubCodeInput] = useState("");
+  const [isFirstPayment, setIsFirstPayment] = useState(true);
+  const [trialStart, setTrialStart] = useState("");
 
   useEffect(()=>{
     const savedShop = localStorage.getItem("dukapulse_current_shop");
@@ -120,13 +122,16 @@ export default function Page() {
 
   useEffect(()=>{
     if(!shopId) return;
-    const stockKey = `dukapulse_${shopId}_stock_v9`;
-    const salesKey = `dukapulse_${shopId}_sales_today_v9`;
-    const profitKey = `dukapulse_${shopId}_profit_today_v9`;
-    const histKey = `dukapulse_${shopId}_history_v9`;
-    const dateKey = `dukapulse_${shopId}_last_date_v9`;
-    const pinKey = `dukapulse_${shopId}_owner_pin_v9`;
-    const expiryKey = `dukapulse_${shopId}_expiry_v9`;
+    const stockKey = `dukapulse_${shopId}_stock_v10`;
+    const salesKey = `dukapulse_${shopId}_sales_today_v10`;
+    const profitKey = `dukapulse_${shopId}_profit_today_v10`;
+    const histKey = `dukapulse_${shopId}_history_v10`;
+    const dateKey = `dukapulse_${shopId}_last_date_v10`;
+    const pinKey = `dukapulse_${shopId}_owner_pin_v10`;
+    const expiryKey = `dukapulse_${shopId}_expiry_v10`;
+    const firstPayKey = `dukapulse_${shopId}_first_paid_v10`;
+    const trialKey = `dukapulse_${shopId}_trial_start_v10`;
+
     const saved = localStorage.getItem(stockKey);
     const savedSales = localStorage.getItem(salesKey);
     const savedProfit = localStorage.getItem(profitKey);
@@ -134,14 +139,31 @@ export default function Page() {
     const savedDate = localStorage.getItem(dateKey);
     const savedPin = localStorage.getItem(pinKey);
     let savedExpiry = localStorage.getItem(expiryKey);
+    let savedFirstPaid = localStorage.getItem(firstPayKey);
+    let savedTrialStart = localStorage.getItem(trialKey);
+
     if(savedPin) setOwnerPin(savedPin); else setOwnerPin("1234");
+
+    // FIRST TIME ACCOUNT = START 7 DAY TRIAL
     if(!savedExpiry){
-      const freeTrial = new Date(); freeTrial.setDate(freeTrial.getDate()+7);
-      savedExpiry = freeTrial.toISOString().slice(0,10);
+      const now = new Date();
+      const trialEnd = new Date(); trialEnd.setDate(now.getDate()+7);
+      savedExpiry = trialEnd.toISOString().slice(0,10);
+      savedTrialStart = now.toISOString().slice(0,10);
       localStorage.setItem(expiryKey, savedExpiry);
+      localStorage.setItem(trialKey, savedTrialStart);
+      localStorage.setItem(firstPayKey, "false");
+      setIsFirstPayment(true);
+      setTrialStart(savedTrialStart);
+    } else {
+      setIsFirstPayment(savedFirstPaid!== "true");
+      if(savedTrialStart) setTrialStart(savedTrialStart);
     }
+
     setExpiry(savedExpiry);
+    // CHECK IF EXPIRED
     if(new Date().toISOString().slice(0,10) > savedExpiry){ setIsBlocked(true); }
+
     const today = getTodayKey();
     if(saved){ try{ const p=JSON.parse(saved); if(p.length>0) setItems(p);}catch{ setItems(INITIAL_ITEMS); } } else { setItems(INITIAL_ITEMS); }
     if(savedHist){ try{ setHistory(JSON.parse(savedHist)); }catch{} }
@@ -156,21 +178,9 @@ export default function Page() {
     }
   }, [shopId]);
 
-  const saveStock = (newItems: Item[]) => {
-    if(!shopId) return;
-    setItems(newItems);
-    localStorage.setItem(`dukapulse_${shopId}_stock_v9`, JSON.stringify(newItems));
-  };
-  const saveHistory = (newHist: Record<string, DailyRecord>) => {
-    if(!shopId) return;
-    setHistory(newHist);
-    localStorage.setItem(`dukapulse_${shopId}_history_v9`, JSON.stringify(newHist));
-  };
-  const saveOwnerPin = (newPin: string) => {
-    if(!shopId) return;
-    setOwnerPin(newPin);
-    localStorage.setItem(`dukapulse_${shopId}_owner_pin_v9`, newPin);
-  };
+  const saveStock = (newItems: Item[]) => { if(!shopId) return; setItems(newItems); localStorage.setItem(`dukapulse_${shopId}_stock_v10`, JSON.stringify(newItems)); };
+  const saveHistory = (newHist: Record<string, DailyRecord>) => { if(!shopId) return; setHistory(newHist); localStorage.setItem(`dukapulse_${shopId}_history_v10`, JSON.stringify(newHist)); };
+  const saveOwnerPin = (newPin: string) => { if(!shopId) return; setOwnerPin(newPin); localStorage.setItem(`dukapulse_${shopId}_owner_pin_v10`, newPin); };
 
   const handleLogin = () => {
     if(!loginInput.trim()) return alert("Enter shop name e.g. Mumias Hardware");
@@ -185,19 +195,10 @@ export default function Page() {
       setShopId(null); setCart([]); setShopName(""); setIsOwnerMode(false);
     }
   };
-  const tryEnterOwnerMode = () => {
-    if(isOwnerMode){ setIsOwnerMode(false); return; }
-    setOwnerPinPrompt(true);
-  };
+  const tryEnterOwnerMode = () => { if(isOwnerMode){ setIsOwnerMode(false); return; } setOwnerPinPrompt(true); };
   const confirmOwnerPin = () => {
-    if(ownerPinInput === ownerPin){
-      setIsOwnerMode(true);
-      setOwnerPinPrompt(false);
-      setOwnerPinInput("");
-    } else {
-      alert("Wrong PIN! Only owner knows PIN.");
-      setOwnerPinInput("");
-    }
+    if(ownerPinInput === ownerPin){ setIsOwnerMode(true); setOwnerPinPrompt(false); setOwnerPinInput(""); }
+    else { alert("Wrong PIN! Only owner knows PIN."); setOwnerPinInput(""); }
   };
   const handleChangePin = () => {
     if(changePinData.oldPin!== ownerPin) return alert("Old PIN is wrong!");
@@ -296,8 +297,8 @@ export default function Page() {
     if(!newHist[key]) newHist[key] = {sales:0, profit:0, count:0};
     newHist[key] = {sales: newHist[key].sales + totalSell, profit: newHist[key].profit + totalProfit, count: newHist[key].count + 1};
     saveHistory(newHist);
-    const salesKey = `dukapulse_${shopId}_sales_today_v9`;
-    const profitKey = `dukapulse_${shopId}_profit_today_v9`;
+    const salesKey = `dukapulse_${shopId}_sales_today_v10`;
+    const profitKey = `dukapulse_${shopId}_profit_today_v10`;
     setSalesToday(s=>{const ns=s+totalSell; localStorage.setItem(salesKey, String(ns)); return ns;});
     setProfitToday(p=>{const np=p+totalProfit; localStorage.setItem(profitKey, String(np)); return np;});
     const rec={id:"RCPT-"+Date.now().toString().slice(-6), date:new Date().toLocaleString(), cart:cart.map(c=>({...c, sell:getSellPrice(c)})), total:amount, phone:mpesaPhone||"CASH", method, mpesaCode, shopId, shopName};
@@ -309,75 +310,109 @@ export default function Page() {
   const weekSales = last7.reduce((s,d)=> s + (d.data?.sales||0), 0);
   const weekProfit = last7.reduce((s,d)=> s + (d.data?.profit||0), 0);
 
+  const daysLeft = () => {
+    if(!expiry) return 0;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const exp = new Date(expiry); exp.setHours(0,0,0,0);
+    const diff = Math.ceil((exp.getTime() - today.getTime()) / (1000*60*60*24));
+    return diff;
+  };
+
   if(!shopId){
     return (
       <main style={{fontFamily:"system-ui", minHeight:"100vh", background:"linear-gradient(135deg,#000,#2563eb)", display:"flex", alignItems:"center", justifyContent:"center", padding:20}}>
         <div style={{background:"white", padding:30, borderRadius:16, maxWidth:420, width:"100%", textAlign:"center"}}>
           <h1 style={{margin:0, fontWeight:900, fontSize:22}}>DUKAPULSE - LOGIN</h1>
+          <p style={{fontSize:11, color:"#16a34a", fontWeight:700, marginTop:4}}>7 DAYS FREE TRIAL - THEN KES 5000</p>
           <input value={loginInput} onChange={e=>setLoginInput(e.target.value)} placeholder="Enter Shop Name e.g. Mumias Hardware" style={{width:"100%", padding:14, borderRadius:10, border:"2px solid black", marginTop:20, fontWeight:700}}/>
-          <button onClick={handleLogin} style={{width:"100%", background:"black", color:"white", padding:14, borderRadius:10, fontWeight:900, marginTop:12, border:"none", cursor:"pointer"}}>OPEN MY SHOP →</button>
+          <button onClick={handleLogin} style={{width:"100%", background:"black", color:"white", padding:14, borderRadius:10, fontWeight:900, marginTop:12, border:"none", cursor:"pointer"}}>START 7 DAY TRIAL →</button>
+          <p style={{fontSize:10, color:"#666", marginTop:10}}>New account = 7 days free, then Paybill 714888 Acc 467108</p>
         </div>
       </main>
     )
   }
 
-  // *** LOOP BIZ ONLY FOR SUBSCRIPTION - NOT FOR CUSTOMER SALES ***
   if(isBlocked){
+    const firstAmount = 5000;
+    const monthlyAmount = 1500;
+    const payAmount = isFirstPayment? firstAmount : monthlyAmount;
     return (
       <main style={{fontFamily:"system-ui", minHeight:"100vh", background:"#000", display:"flex", alignItems:"center", justifyContent:"center", padding:20}}>
-        <div style={{background:"white", padding:22, borderRadius:16, maxWidth:420, width:"100%", textAlign:"center", border:"4px solid #7a1e2d"}}>
-          <h1 style={{color:"#7a1e2d", fontSize:36, margin:0}}>🔒 LOCKED</h1>
-          <h2 style={{margin:"8px 0", fontSize:16}}>{shopName.toUpperCase()} - SUBSCRIPTION EXPIRED</h2>
-          <p style={{fontSize:12, color:"#666"}}>Expired: {expiry}<br/>Pay monthly fee to continue</p>
+        <div style={{background:"white", padding:22, borderRadius:16, maxWidth:440, width:"100%", textAlign:"center", border:"4px solid #7a1e2d"}}>
+          <h1 style={{color:"#7a1e2d", fontSize:36, margin:0}}>🔒 INACTIVE</h1>
+          <h2 style={{margin:"8px 0", fontSize:15}}>{shopName.toUpperCase()}</h2>
+          <div style={{background: isFirstPayment? "#fef2f2" : "#fef9c3", padding:8, borderRadius:8, marginTop:6}}>
+            <p style={{fontSize:12, margin:0, fontWeight:800, color: isFirstPayment? "#7a1e2d" : "#92400e"}}>
+              {isFirstPayment? `7 DAY TRIAL ENDED ON ${expiry}` : `SUBSCRIPTION EXPIRED ON ${expiry}`}
+            </p>
+            <p style={{fontSize:10, margin:"4px 0 0 0", color:"#666"}}>
+              Trial started: {trialStart} • Expired: {expiry}
+            </p>
+          </div>
 
-          <div style={{background:"#7a1e2d", borderRadius:12, padding:14, marginTop:14, textAlign:"left", color:"white"}}>
+          <div style={{background:"#7a1e2d", borderRadius:12, padding:14, marginTop:12, textAlign:"left", color:"white"}}>
             <div style={{display:"flex", justifyContent:"space-between"}}>
               <span style={{fontWeight:900, fontSize:14, color:"#ff9aa2"}}>LOOP BIZ</span>
               <span style={{fontSize:9, background:"white", color:"#7a1e2d", padding:"2px 8px", borderRadius:20, fontWeight:800}}>PAY WITH LOOP</span>
             </div>
-            <div style={{fontSize:10, marginTop:4}}>M-PESA & AIRTEL MONEY PAYBILL - MONTHLY SUBSCRIPTION</div>
-            <div style={{fontSize:32, fontWeight:900, color:"#ff6b7a", letterSpacing:1}}>714888</div>
-            <div style={{fontSize:11, fontWeight:700, marginTop:4}}>LOOP BIZ ACCOUNT NUMBER</div>
+
+            {isFirstPayment? (
+              <div style={{marginTop:8}}>
+                <div style={{fontSize:11, background:"#ff9aa2", color:"#7a1e2d", padding:6, borderRadius:6, fontWeight:900, textAlign:"center"}}>FIRST PAYMENT - NEW ACCOUNT</div>
+                <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginTop:8, fontSize:12}}>
+                  <div style={{background:"rgba(255,255,255,0.15)", padding:8, borderRadius:6}}><div style={{fontSize:10}}>INSTALLATION FEE</div><div style={{fontWeight:900, fontSize:14}}>KES 3,500</div></div>
+                  <div style={{background:"rgba(255,255,255,0.15)", padding:8, borderRadius:6}}><div style={{fontSize:10}}>MONTHLY (30 DAYS)</div><div style={{fontWeight:900, fontSize:14}}>KES 1,500</div></div>
+                </div>
+                <div style={{fontSize:18, fontWeight:900, textAlign:"center", marginTop:8, color:"#ff9aa2"}}>TOTAL: KES 5,000</div>
+              </div>
+            ) : (
+              <div style={{marginTop:8}}>
+                <div style={{fontSize:11, background:"#facc15", color:"black", padding:6, borderRadius:6, fontWeight:900, textAlign:"center"}}>MONTHLY RENEWAL - 30 DAYS</div>
+                <div style={{fontSize:28, fontWeight:900, textAlign:"center", marginTop:8, color:"#ff9aa2"}}>KES 1,500</div>
+              </div>
+            )}
+
+            <div style={{fontSize:10, marginTop:8}}>M-PESA & AIRTEL MONEY PAYBILL</div>
+            <div style={{fontSize:30, fontWeight:900, color:"#ff6b7a"}}>714888</div>
+            <div style={{fontSize:11, fontWeight:700}}>ACCOUNT NUMBER</div>
             <div style={{display:"flex", gap:4, marginTop:4}}>
               {["4","6","7","1","0","8"].map((d,i)=><div key={i} style={{background:"white", color:"#7a1e2d", width:30, height:30, display:"flex", alignItems:"center", justifyContent:"center", borderRadius:5, fontWeight:900}}>{d}</div>)}
             </div>
             <div style={{fontSize:11, marginTop:10, background:"rgba(255,255,255,0.12)", padding:8, borderRadius:8, lineHeight:1.4}}>
-              <b>TO PAY MONTHLY SUBSCRIPTION:</b><br/>
-              1. M-Pesa → Lipa na M-Pesa → Paybill<br/>
-              2. Business No: <b>714888</b><br/>
-              3. Account No: <b>467108</b><br/>
-              4. Amount: <b>1500</b><br/>
-              5. PIN → Send
+              Pay <b>KES {payAmount}</b>: M-Pesa → Lipa na M-Pesa → Paybill → <b>714888</b> → Acc <b>467108</b> → Amount <b>{payAmount}</b> → PIN
             </div>
-            <input value={subCodeInput} onChange={e=>setSubCodeInput(e.target.value)} placeholder="Enter M-Pesa CODE after paying e.g. QGH8..." style={{width:"100%", padding:11, borderRadius:8, border:"2px solid #16a34a", marginTop:10, color:"black"}}/>
+            <input value={subCodeInput} onChange={e=>setSubCodeInput(e.target.value)} placeholder={`Enter CODE after paying KES ${payAmount} e.g. QGH...`} style={{width:"100%", padding:11, borderRadius:8, border:"2px solid #16a34a", marginTop:10, color:"black", fontWeight:700}}/>
             <button onClick={()=>{
-              if(!subCodeInput || subCodeInput.length < 8) return alert("Enter valid M-Pesa CODE from SMS after paying to Paybill");
+              if(!subCodeInput || subCodeInput.length < 8) return alert("Enter valid M-Pesa CODE from SMS");
               const newDate = new Date(); newDate.setDate(newDate.getDate()+30);
               const newExpiry = newDate.toISOString().slice(0,10);
-              localStorage.setItem(`dukapulse_${shopId}_expiry_v9`, newExpiry);
-              localStorage.setItem(`dukapulse_${shopId}_last_payment_v9`, JSON.stringify({code: subCodeInput, date: new Date().toISOString(), amount:1500, paybill:"714888", acc:"467108"}));
-              setIsBlocked(false); setExpiry(newExpiry); setSubCodeInput(""); alert(`✅ LOOP BIZ CODE ${subCodeInput} ACCEPTED! Unlocked till ${newExpiry} - 30 DAYS`);
+              localStorage.setItem(`dukapulse_${shopId}_expiry_v10`, newExpiry);
+              localStorage.setItem(`dukapulse_${shopId}_first_paid_v10`, "true");
+              localStorage.setItem(`dukapulse_${shopId}_last_payment_v10`, JSON.stringify({code: subCodeInput, date: new Date().toISOString(), amount: payAmount, isFirst: isFirstPayment, paybill:"714888", acc:"467108"}));
+              setIsBlocked(false); setExpiry(newExpiry); setIsFirstPayment(false); setSubCodeInput("");
+              alert(`✅ ${isFirstPayment? "INSTALLATION KES 3500 + MONTHLY KES 1500" : "MONTHLY KES 1500"} PAID! Code ${subCodeInput} - Unlocked till ${newExpiry}`);
             }} style={{width:"100%", background:"#16a34a", color:"white", padding:12, borderRadius:8, fontWeight:900, border:"none", marginTop:8, cursor:"pointer"}}>
-              VERIFY LOOP BIZ PAYMENT & UNLOCK
+              VERIFY KES {payAmount} & UNLOCK 30 DAYS
             </button>
-            <div style={{fontSize:9, textAlign:"center", marginTop:6, opacity:0.8}}>Only pay to official Paybill 714888 Acc 467108</div>
           </div>
 
-          <div style={{marginTop:12, borderTop:"1px solid #eee", paddingTop:8}}>
-            <p style={{fontSize:10, color:"#888"}}>Owner admin override</p>
-            <div style={{display:"flex", gap:6, marginTop:4}}>
-              <input type="password" value={adminCode} onChange={e=>setAdminCode(e.target.value)} placeholder="Admin code" style={{flex:1, padding:8, borderRadius:8, border:"1px solid #ccc"}}/>
-              <button onClick={()=>{
-                if(adminCode==="MUMIASBOSS2026"){
-                  const newDate = new Date(); newDate.setDate(newDate.getDate()+30);
-                  const newExpiry = newDate.toISOString().slice(0,10);
-                  localStorage.setItem(`dukapulse_${shopId}_expiry_v9`, newExpiry);
-                  setIsBlocked(false); setExpiry(newExpiry); setAdminCode(""); alert(`✅ MANUAL UNLOCK ${newExpiry}`);
-                } else { alert("Wrong admin code!"); }
-              }} style={{background:"#eee", border:"none", padding:"8px 12px", borderRadius:8, fontSize:11, fontWeight:700}}>Unlock</button>
-            </div>
+          <div style={{marginTop:10, fontSize:10, color:"#666"}}>
+            {isFirstPayment? "First payment includes installation" : "Monthly subscription renewal"}<br/>Paybill 714888 • Account 467108
           </div>
-          <button onClick={()=>{ if(confirm("Logout?")){ localStorage.removeItem("dukapulse_current_shop"); setShopId(null); setIsBlocked(false);} }} style={{marginTop:10, background:"#f3f4f6", border:"none", padding:"8px 16px", borderRadius:8, fontSize:11}}>Logout</button>
+
+          <div style={{marginTop:10, borderTop:"1px solid #eee", paddingTop:8, display:"flex", gap:6}}>
+            <input type="password" value={adminCode} onChange={e=>setAdminCode(e.target.value)} placeholder="Admin override" style={{flex:1, padding:8, borderRadius:8, border:"1px solid #ccc", fontSize:11}}/>
+            <button onClick={()=>{
+              if(adminCode==="MUMIASBOSS2026"){
+                const newDate = new Date(); newDate.setDate(newDate.getDate()+30);
+                const newExpiry = newDate.toISOString().slice(0,10);
+                localStorage.setItem(`dukapulse_${shopId}_expiry_v10`, newExpiry);
+                if(isFirstPayment) localStorage.setItem(`dukapulse_${shopId}_first_paid_v10`, "true");
+                setIsBlocked(false); setExpiry(newExpiry); setIsFirstPayment(false); setAdminCode(""); alert(`✅ MANUAL UNLOCK ${newExpiry}`);
+              } else { alert("Wrong admin!"); }
+            }} style={{background:"#eee", border:"none", padding:"8px 12px", borderRadius:8, fontSize:11, fontWeight:700}}>Unlock</button>
+          </div>
+          <button onClick={()=>{ if(confirm("Logout?")){ localStorage.removeItem("dukapulse_current_shop"); setShopId(null); setIsBlocked(false);} }} style={{marginTop:8, background:"#f3f4f6", border:"none", padding:"6px 12px", borderRadius:8, fontSize:10}}>Logout</button>
         </div>
       </main>
     )
@@ -387,15 +422,33 @@ export default function Page() {
     <main style={{fontFamily:"system-ui", padding:12, maxWidth:1300, margin:"0 auto", background:"#f5f7fb", minHeight:"100vh"}}>
       <div className="no-print" style={{background:"linear-gradient(135deg,#000,#2563eb)", color:"white", padding:16, borderRadius:14, marginBottom:12}}>
         <div style={{display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:10}}>
-          <div><h1 style={{margin:0, fontSize:18, fontWeight:900}}>DUKAPULSE - {shopName.toUpperCase()}</h1><p style={{margin:"4px 0 0 0", fontSize:11, opacity:0.9}}>{items.length} Items ● Today KES {salesToday.toLocaleString()} ● Profit KES {profitToday.toLocaleString()} ● Exp {expiry} ● {status}</p></div>
+          <div>
+            <h1 style={{margin:0, fontSize:18, fontWeight:900}}>DUKAPULSE - {shopName.toUpperCase()}</h1>
+            <p style={{margin:"4px 0 0 0", fontSize:11, opacity:0.9}}>
+              {items.length} Items ● Today KES {salesToday.toLocaleString()} ● Profit KES {profitToday.toLocaleString()} ●
+              <span style={{background: daysLeft() <=3? "#ef4444" : "#16a34a", padding:"2px 6px", borderRadius:10, marginLeft:6, fontWeight:800}}>
+                {isFirstPayment? `TRIAL: ${daysLeft()} days left` : `Exp: ${expiry} (${daysLeft()} days)`}
+              </span>
+            </p>
+          </div>
           <div style={{display:"flex", gap:8}}>
             <button onClick={tryEnterOwnerMode} style={{background: isOwnerMode? "#facc15" : "white", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>{isOwnerMode? "🛒 Selling Mode" : "🔒 Owner Restock"}</button>
             <button onClick={handleLogout} style={{background:"white", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>Logout</button>
             <button onClick={()=>setShowProfit(true)} style={{background:"#000", color:"#facc15", border:"1px solid #facc15", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>🔒 MY PROFIT</button>
           </div>
         </div>
+        {isFirstPayment && daysLeft() <=3 && daysLeft() >0 && (
+          <div style={{marginTop:10, background:"#fef2f2", color:"#7a1e2d", padding:"8px 12px", borderRadius:8, fontSize:12, fontWeight:800, border:"1px solid #fecaca"}}>
+            ⚠️ TRIAL ENDING IN {daysLeft()} DAYS! Pay KES 5000 (3500 Installation + 1500 Monthly) via Paybill 714888 Acc 467108 to avoid lock!
+          </div>
+        )}
+        {!isFirstPayment && daysLeft() <=5 && daysLeft() >0 && (
+          <div style={{marginTop:10, background:"#fef9c3", color:"#92400e", padding:"8px 12px", borderRadius:8, fontSize:12, fontWeight:800}}>
+            ⚠️ RENEWAL IN {daysLeft()} DAYS! Pay KES 1500 via Paybill 714888 Acc 467108
+          </div>
+        )}
         <div style={{display:"flex", gap:6, marginTop:10, flexWrap:"wrap"}}>{["All",...Array.from(new Set(items.map(i=>i.category)))].map(cat=>(<button key={cat} onClick={()=>setCategory(cat)} style={{background: category===cat?"white":"rgba(255,255,255,0.2)", color: category===cat?"black":"white", border:"none", padding:"6px 12px", borderRadius:20, fontSize:11, fontWeight:700, cursor:"pointer"}}>{cat}</button>))}</div>
-        {isOwnerMode && <div style={{marginTop:10, background:"#facc15", color:"black", padding:"8px 12px", borderRadius:8, fontSize:12, fontWeight:700, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8}}><span>🔓 OWNER UNLOCKED - Exp {expiry}</span><div style={{display:"flex", gap:6}}><button onClick={()=>setShowAddForm(true)} style={{background:"black", color:"#facc15", border:"none", padding:"6px 14px", borderRadius:20, fontWeight:900, fontSize:12, cursor:"pointer"}}>➕ ADD PRODUCT</button><button onClick={()=>setShowChangePin(true)} style={{background:"white", color:"black", border:"1px solid black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>🔑 Change PIN</button></div></div>}
+        {isOwnerMode && <div style={{marginTop:10, background:"#facc15", color:"black", padding:"8px 12px", borderRadius:8, fontSize:12, fontWeight:700, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8}}><span>🔓 OWNER UNLOCKED - {isFirstPayment?`TRIAL till ${expiry}`:`Exp ${expiry}`}</span><div style={{display:"flex", gap:6}}><button onClick={()=>setShowAddForm(true)} style={{background:"black", color:"#facc15", border:"none", padding:"6px 14px", borderRadius:20, fontWeight:900, fontSize:12, cursor:"pointer"}}>➕ ADD PRODUCT</button><button onClick={()=>setShowChangePin(true)} style={{background:"white", color:"black", border:"1px solid black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>🔑 Change PIN</button></div></div>}
       </div>
 
       {ownerPinPrompt && (
@@ -452,7 +505,7 @@ export default function Page() {
           ) : (
             <div>
               <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
-                <h3 style={{margin:0}}>💰 PROFIT CALENDAR - {shopName}</h3>
+                <h3 style={{margin:0}}>💰 PROFIT - {shopName} - {isFirstPayment?`TRIAL ${daysLeft()}d left`:`Paid till ${expiry}`}</h3>
                 <div style={{display:"flex", gap:6}}>
                   <button onClick={()=>setCalendarView("today")} style={{background:calendarView==="today"?"#facc15":"#222", color:calendarView==="today"?"#000":"#fff", border:"none", padding:"6px 10px", borderRadius:6, fontSize:11, fontWeight:700}}>Today</button>
                   <button onClick={()=>setCalendarView("week")} style={{background:calendarView==="week"?"#facc15":"#222", color:calendarView==="week"?"#000":"#fff", border:"none", padding:"6px 10px", borderRadius:6, fontSize:11, fontWeight:700}}>7 Days</button>
@@ -507,7 +560,6 @@ export default function Page() {
               <div style={{fontSize:12}}>CODE: <b>{paidCode}</b></div>
               <div style={{fontSize:12}}>AMOUNT: <b>KES {paidAmount.toLocaleString()}</b></div>
             </div>
-            <p style={{fontSize:11, color:"#666", marginTop:10}}>Generating receipt...</p>
           </div>
         </div>
       )}
@@ -536,7 +588,7 @@ export default function Page() {
       )}
 
       <div className="no-print" style={{display:"grid", gridTemplateColumns:"2.2fr 1fr", gap:12}}>
-        <div style={{background:"white", borderRadius:12, padding:10}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={`Search ${items.length} items in ${shopName}...`} style={{width:"100%", padding:12, borderRadius:8, border:"2px solid #e5e7eb", marginBottom:10}}/><div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, maxHeight:"75vh", overflowY:"auto"}}>
+        <div style={{background:"white", borderRadius:12, padding:10}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={`Search ${items.length} items...`} style={{width:"100%", padding:12, borderRadius:8, border:"2px solid #e5e7eb", marginBottom:10}}/><div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, maxHeight:"75vh", overflowY:"auto"}}>
           {filtered.map(item=>(
             <div key={item.id} style={{display:"flex", justifyContent:"space-between", alignItems:"center", padding:10, border: item.stock < 10? "2px solid red" : "1px solid #eee", borderRadius:10, background: item.stock < 10? "#fef2f2" : "white"}}>
               <div style={{flex:1}}>
@@ -559,12 +611,12 @@ export default function Page() {
           {cart.length===0 && <div style={{fontSize:12, color:"#888"}}>Cart empty</div>}
           <h2 style={{margin:"10px 0 4px 0"}}>Total: KES {totalSell.toLocaleString()}</h2>
           <div style={{fontSize:11, background:"#fef9c3", padding:6, borderRadius:6, marginBottom:8}}>Cart Profit: KES {totalProfit.toLocaleString()}</div>
-
-          {/* NORMAL CUSTOMER PAYMENT - NOT LOOP BIZ */}
           <input value={mpesaPhone} onChange={e=>setMpesaPhone(e.target.value)} placeholder="Customer M-Pesa 07xx (empty=CASH)" style={{width:"100%", padding:11, borderRadius:8, border:"2px solid black", margin:"8px 0"}}/>
           <button disabled={loading} onClick={handleSale} style={{width:"100%", background: loading?"#9ca3af":"#000", color:"white", border:"none", padding:14, borderRadius:10, fontWeight:900, cursor:"pointer"}}>{loading? status : "LIPA NA M-PESA / CASH"}</button>
           <button onClick={()=>setCart([])} style={{width:"100%", marginTop:6, background:"#f3f4f6", border:"none", padding:9, borderRadius:8, cursor:"pointer"}}>Clear Cart</button>
-          <div style={{fontSize:10, color:"#888", marginTop:8, textAlign:"center"}}>Customer pays via STK to their phone<br/>Subscription Exp: {expiry}</div>
+          <div style={{fontSize:10, color:"#888", marginTop:8, textAlign:"center"}}>
+            {isFirstPayment? `TRIAL: ${daysLeft()} days left - Pay 5000 via 714888/467108 after` : `Active till ${expiry} - Monthly 1500 via 714888/467108`}
+          </div>
         </div>
       </div>
     </main>
