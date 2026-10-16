@@ -77,7 +77,6 @@ const INITIAL_ITEMS: Item[] = [
 ];
 
 function getTodayKey() { return new Date().toISOString().slice(0,10); }
-function calcVAT(total: number){ const taxable = total / 1.16; const vat = total - taxable; return { taxable: taxable.toFixed(2), vat: vat.toFixed(2), total: total.toFixed(2) }; }
 function genKRAInv(id: string){ const date = new Date().toISOString().slice(0,10).replace(/-/g,''); return `CUINV-${date}-${id.slice(-4)}`; }
 
 export default function Page() {
@@ -163,11 +162,12 @@ export default function Page() {
     if(changePinData.oldPin!== ownerPin) return alert("Old PIN wrong! Current PIN is "+ownerPin);
     if(changePinData.newPin.length < 4) return alert("New PIN must be 4+ digits");
     if(changePinData.newPin!== changePinData.confirmPin) return alert("PINs don't match!");
-    setOwnerPin(changePinData.newPin);
-    if(shopId) localStorage.setItem(`dukapulse_${shopId}_owner_pin_v10`, changePinData.newPin);
+    const newPinVal = changePinData.newPin;
+    setOwnerPin(newPinVal);
+    if(shopId) localStorage.setItem(`dukapulse_${shopId}_owner_pin_v10`, newPinVal);
     setChangePinData({oldPin:"", newPin:"", confirmPin:""});
     setShowChangePin(false);
-    alert(`PIN CHANGED! New PIN: ${changePinData.newPin}`);
+    alert(`PIN CHANGED! New PIN: ${newPinVal}`);
   };
   const handleRestock = (id: number) => {
     const addQty = parseInt(restockInputs[id] || "0");
@@ -226,9 +226,8 @@ export default function Page() {
     setProfitToday(p=>{const np=p+totalProfit; if(shopId) localStorage.setItem(`dukapulse_${shopId}_profit_today_v10`, String(np)); return np;});
     const id = "RCPT-"+Date.now().toString().slice(-6);
     const kraNo = genKRAInv(id);
-    const vat = calcVAT(totalSell);
     const qrValue = `${shopName.toUpperCase()}|KRA PIN:P051234567Z|CU:${kraNo}|ID:${id}|TOTAL:KES ${totalSell}|VERIFY:https://etims.kra.go.ke/verify/${kraNo}`;
-    const rec={ id, kraNo, vat, qrValue, date:new Date().toLocaleString(), cart, total:totalSell, phone: mpesaPhone || "Walk-in", customer: customerName || "Walk-in", method: mpesaPhone? "M-PESA" : "CASH", mpesaCode: mpesaPhone? "PAID" : "-", shopName, kraPin: "P051234567Z" };
+    const rec={ id, kraNo, qrValue, date:new Date().toLocaleString(), cart, total:totalSell, phone: mpesaPhone || "Walk-in", customer: customerName || "Walk-in", method: mpesaPhone? "M-PESA" : "CASH", shopName, kraPin: "P051234567Z" };
     setReceipt(rec);
   };
   const closeReceipt=()=>{setReceipt(null); setCart([]); setMpesaPhone(""); setCustomerName("");};
@@ -280,7 +279,7 @@ export default function Page() {
           </div>
           <div style={{background:"linear-gradient(90deg,#facc15,#fb923c)", color:"black", padding:"12px 14px", borderRadius:10, display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10}}>
             <div>
-              <div style={{fontSize:10, fontWeight:700, opacity:0.8}}>{profitView==="Month"? `MONTH: ${monthKey}` : profitView==="Today"? "TODAY" : "7 DAYS"}</div>
+              <div style={{fontSize:10, fontWeight:700, opacity:0.8}}>{profitView==="Month"? `MONTH: ${monthKey}` : "TODAY"}</div>
               <div style={{fontSize:18, fontWeight:900}}>KES {profitView==="Month"? monthSales.toLocaleString() : salesToday.toLocaleString()}</div>
             </div>
             <div>
@@ -353,30 +352,36 @@ export default function Page() {
       </div>
 
       {receipt && (
-        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999, padding:20}}>
-          <div style={{background:"white", padding:20, borderRadius:12, maxWidth:360, width:"100%"}}>
-            <h2 style={{margin:0, fontSize:14, textAlign:"center"}}>{receipt.shopName.toUpperCase()} - RECEIPT</h2>
-            <p style={{fontSize:10, textAlign:"center", margin:"4px 0"}}>KRA PIN: {receipt.kraPin} | {receipt.kraNo}</p>
-            <div style={{fontSize:11, marginTop:8}}>
-              {receipt.cart.map((c:any)=><div key={c.id} style={{display:"flex", justifyContent:"space-between"}}><span>{c.name.slice(0,20)} x{c.qty}</span><span>{c.customSell*c.qty}</span></div>)}
+        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999, padding:20}}>
+          <div style={{background:"white", padding:22, borderRadius:14, maxWidth:380, width:"100%", textAlign:"center"}}>
+            <h2 style={{margin:0, fontSize:15, fontWeight:900}}>{receipt.shopName.toUpperCase()} - RECEIPT</h2>
+            <p style={{fontSize:10, margin:"4px 0", color:"#555"}}>KRA PIN: {receipt.kraPin} | {receipt.kraNo}</p>
+            <div style={{fontSize:11, marginTop:10, textAlign:"left"}}>
+              {receipt.cart.map((c:any)=><div key={c.id} style={{display:"flex", justifyContent:"space-between"}}><span>{c.name} x{c.qty}</span><span>{c.customSell*c.qty}</span></div>)}
             </div>
-            <div style={{borderTop:"2px solid black", marginTop:8, paddingTop:8, display:"flex", justifyContent:"space-between", fontWeight:900}}>
-              <span>TOTAL</span><span>KES {receipt.total}</span>
+            <div style={{borderTop:"2px solid black", marginTop:10, paddingTop:8, display:"flex", justifyContent:"space-between", fontWeight:900, fontSize:14}}>
+              <span>TOTAL</span><span>KES {receipt.total.toLocaleString()}</span>
             </div>
-            <div style={{textAlign:"center", marginTop:10}}>
-              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(receipt.qrValue)}`} alt="QR" style={{width:140, height:140}}/>
+            <div style={{marginTop:14, display:"flex", justifyContent:"center"}}>
+              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(receipt.qrValue)}`} alt="QR" style={{width:160, height:160, border:"2px solid #000"}}/>
             </div>
-            <button onClick={closeReceipt} style={{width:"100%", background:"black", color:"white", padding:10, borderRadius:8, marginTop:10, border:"none", fontWeight:800}}>DONE</button>
+            <div style={{background:"linear-gradient(90deg,#facc15,#f59e0b)", color:"black", fontWeight:900, fontSize:14, padding:"8px 12px", borderRadius:8, marginTop:12}}>
+              Asante kwa kununua nasi. Karibu tena!
+            </div>
+            <div style={{fontSize:9, color:"#666", marginTop:6}}>Thank you for shopping with us. Welcome again!</div>
+            <div style={{fontSize:8, color:"#999", marginTop:6}}>{receipt.date} | {receipt.method} | {receipt.customer}</div>
+            <button onClick={closeReceipt} style={{width:"100%", background:"black", color:"white", padding:12, borderRadius:8, marginTop:12, border:"none", fontWeight:800, cursor:"pointer"}}>DONE</button>
           </div>
         </div>
       )}
 
       {ownerPinPrompt && (
         <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999}}>
-          <div style={{background:"white", padding:20, borderRadius:12}}>
-            <h3>Enter PIN (1234)</h3>
-            <input value={ownerPinInput} onChange={e=>setOwnerPinInput(e.target.value)} type="password" style={{width:"100%", padding:10, borderRadius:8, border:"2px solid black"}}/>
-            <button onClick={confirmOwnerPin} style={{width:"100%", background:"black", color:"white", padding:10, borderRadius:8, marginTop:8}}>ENTER</button>
+          <div style={{background:"white", padding:20, borderRadius:12, maxWidth:300, width:"90%"}}>
+            <h3 style={{marginTop:0}}>Enter Owner PIN</h3>
+            <input value={ownerPinInput} onChange={e=>setOwnerPinInput(e.target.value)} type="password" placeholder="PIN is 1234" style={{width:"100%", padding:12, borderRadius:8, border:"2px solid black"}}/>
+            <button onClick={confirmOwnerPin} style={{width:"100%", background:"black", color:"white", padding:12, borderRadius:8, marginTop:8, fontWeight:800}}>ENTER</button>
+            <button onClick={()=>setOwnerPinPrompt(false)} style={{width:"100%", background:"#eee", padding:10, borderRadius:8, marginTop:6, border:"none"}}>Cancel</button>
           </div>
         </div>
       )}
