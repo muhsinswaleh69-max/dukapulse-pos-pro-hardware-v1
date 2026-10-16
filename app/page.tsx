@@ -77,7 +77,6 @@ const INITIAL_ITEMS: Item[] = [
 
 function getTodayKey() { return new Date().toISOString().slice(0,10); }
 function getDateKey(d: Date) { return d.toISOString().slice(0,10); }
-// KRA HELPERS - INLINE TO AVOID IMPORT ERRORS
 function calcVAT(total: number){
   const taxable = total / 1.16;
   const vat = total - taxable;
@@ -268,9 +267,10 @@ export default function Page() {
 
   const handleSale = async () => {
     if(cart.length===0) return alert("Cart empty!");
+    // FIXED: CASH LOGIC NOW CORRECT - Phone = Walk-in, Code = -
     if(!mpesaPhone || mpesaPhone.length < 10){
       if(!confirm("Cash sale KES "+totalSell+"?")) return;
-      completeSale("CASH", "CASH", totalSell, "CASH");
+      completeSale("CASH", "-", totalSell, "Walk-in");
       return;
     }
     setLoading(true);
@@ -320,7 +320,7 @@ export default function Page() {
       date:new Date().toLocaleString(),
       cart:cart.map(c=>({...c, sell:getSellPrice(c)})),
       total:amount,
-      phone: customerPhone || "Walk-in", // FIXED - NOT CASH ANYMORE
+      phone: customerPhone,
       customer: customerName || "Walk-in Customer",
       method,
       mpesaCode,
@@ -359,76 +359,32 @@ export default function Page() {
   }
 
   if(isBlocked){
-    const firstAmount = 5000;
-    const monthlyAmount = 1500;
-    const payAmount = isFirstPayment? firstAmount : monthlyAmount;
+    const payAmount = isFirstPayment? 5000 : 1500;
     return (
       <main style={{fontFamily:"system-ui", minHeight:"100vh", background:"#000", display:"flex", alignItems:"center", justifyContent:"center", padding:20}}>
         <div style={{background:"white", padding:22, borderRadius:16, maxWidth:440, width:"100%", textAlign:"center", border:"4px solid #7a1e2d"}}>
           <h1 style={{color:"#7a1e2d", fontSize:36, margin:0}}>INACTIVE</h1>
           <h2 style={{margin:"8px 0", fontSize:15}}>{shopName.toUpperCase()}</h2>
-          <div style={{background: isFirstPayment? "#fef2f2" : "#fef9c3", padding:8, borderRadius:8, marginTop:6}}>
-            <p style={{fontSize:12, margin:0, fontWeight:800, color: isFirstPayment? "#7a1e2d" : "#92400e"}}>
-              {isFirstPayment? `7 DAY TRIAL ENDED ON ${expiry}` : `SUBSCRIPTION EXPIRED ON ${expiry}`}
-            </p>
-          </div>
           <div style={{background:"#7a1e2d", borderRadius:12, padding:14, marginTop:12, textAlign:"left", color:"white"}}>
-            <div style={{display:"flex", justifyContent:"space-between"}}>
-              <span style={{fontWeight:900, fontSize:14, color:"#ff9aa2"}}>LOOP BIZ</span>
-              <span style={{fontSize:9, background:"white", color:"#7a1e2d", padding:"2px 8px", borderRadius:20, fontWeight:800}}>PAY WITH LOOP</span>
-            </div>
-            {isFirstPayment? (
-              <div style={{marginTop:8}}>
-                <div style={{fontSize:11, background:"#ff9aa2", color:"#7a1e2d", padding:6, borderRadius:6, fontWeight:900, textAlign:"center"}}>FIRST PAYMENT - NEW ACCOUNT</div>
-                <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginTop:8, fontSize:12}}>
-                  <div style={{background:"rgba(255,255,255,0.15)", padding:8, borderRadius:6}}><div style={{fontSize:10}}>INSTALLATION FEE</div><div style={{fontWeight:900, fontSize:14}}>KES 3,500</div></div>
-                  <div style={{background:"rgba(255,255,255,0.15)", padding:8, borderRadius:6}}><div style={{fontSize:10}}>MONTHLY (30 DAYS)</div><div style={{fontWeight:900, fontSize:14}}>KES 1,500</div></div>
-                </div>
-                <div style={{fontSize:18, fontWeight:900, textAlign:"center", marginTop:8, color:"#ff9aa2"}}>TOTAL: KES 5,000</div>
-              </div>
-            ) : (
-              <div style={{marginTop:8}}>
-                <div style={{fontSize:11, background:"#facc15", color:"black", padding:6, borderRadius:6, fontWeight:900, textAlign:"center"}}>MONTHLY RENEWAL - 30 DAYS</div>
-                <div style={{fontSize:28, fontWeight:900, textAlign:"center", marginTop:8, color:"#ff9aa2"}}>KES 1,500</div>
-              </div>
-            )}
-            <div style={{fontSize:10, marginTop:8}}>M-PESA & AIRTEL MONEY PAYBILL</div>
+            <div style={{fontSize:10, marginTop:8}}>PAYBILL</div>
             <div style={{fontSize:30, fontWeight:900, color:"#ff6b7a"}}>714888</div>
-            <div style={{fontSize:11, fontWeight:700}}>ACCOUNT NUMBER</div>
-            <div style={{display:"flex", gap:4, marginTop:4}}>
-              {["4","6","7","1","0","8"].map((d,i)=><div key={i} style={{background:"white", color:"#7a1e2d", width:30, height:30, display:"flex", alignItems:"center", justifyContent:"center", borderRadius:5, fontWeight:900}}>{d}</div>)}
+            <div style={{fontSize:11, fontWeight:700}}>ACCOUNT 467108</div>
+            <div style={{fontSize:11, marginTop:10, background:"rgba(255,255,255,0.12)", padding:8, borderRadius:8}}>
+              Pay <b>KES {payAmount}</b>: M-Pesa → Lipa na M-Pesa → Paybill → <b>714888</b> → Acc <b>467108</b>
             </div>
-            <div style={{fontSize:11, marginTop:10, background:"rgba(255,255,255,0.12)", padding:8, borderRadius:8, lineHeight:1.4}}>
-              Pay <b>KES {payAmount}</b>: M-Pesa → Lipa na M-Pesa → Paybill → <b>714888</b> → Acc <b>467108</b> → Amount <b>{payAmount}</b> → PIN
-            </div>
-            <input value={subCodeInput} onChange={e=>setSubCodeInput(e.target.value)} placeholder={`Enter CODE after paying KES ${payAmount} e.g. QGH...`} style={{width:"100%", padding:11, borderRadius:8, border:"2px solid #16a34a", marginTop:10, color:"black", fontWeight:700}}/>
+            <input value={subCodeInput} onChange={e=>setSubCodeInput(e.target.value)} placeholder={`Enter CODE after paying KES ${payAmount}`} style={{width:"100%", padding:11, borderRadius:8, border:"2px solid #16a34a", marginTop:10, color:"black", fontWeight:700}}/>
             <button onClick={()=>{
-              if(!subCodeInput || subCodeInput.length < 8) return alert("Enter valid M-Pesa CODE from SMS");
+              if(!subCodeInput || subCodeInput.length < 8) return alert("Enter valid M-Pesa CODE");
               const newDate = new Date(); newDate.setDate(newDate.getDate()+30);
               const newExpiry = newDate.toISOString().slice(0,10);
               localStorage.setItem(`dukapulse_${shopId}_expiry_v10`, newExpiry);
               localStorage.setItem(`dukapulse_${shopId}_first_paid_v10`, "true");
-              localStorage.setItem(`dukapulse_${shopId}_last_payment_v10`, JSON.stringify({code: subCodeInput, date: new Date().toISOString(), amount: payAmount, isFirst: isFirstPayment, paybill:"714888", acc:"467108"}));
               setIsBlocked(false); setExpiry(newExpiry); setIsFirstPayment(false); setSubCodeInput("");
-              alert(`PAID! Code ${subCodeInput} - Unlocked till ${newExpiry}`);
+              alert(`PAID! Unlocked till ${newExpiry}`);
             }} style={{width:"100%", background:"#16a34a", color:"white", padding:12, borderRadius:8, fontWeight:900, border:"none", marginTop:8, cursor:"pointer"}}>
               VERIFY KES {payAmount} & UNLOCK 30 DAYS
             </button>
           </div>
-          <div style={{marginTop:10, fontSize:10, color:"#666"}}>Paybill 714888 • Account 467108</div>
-          <div style={{marginTop:10, borderTop:"1px solid #eee", paddingTop:8, display:"flex", gap:6}}>
-            <input type="password" value={adminCode} onChange={e=>setAdminCode(e.target.value)} placeholder="Admin override" style={{flex:1, padding:8, borderRadius:8, border:"1px solid #ccc", fontSize:11}}/>
-            <button onClick={()=>{
-              if(adminCode==="MUMIASBOSS2026"){
-                const newDate = new Date(); newDate.setDate(newDate.getDate()+30);
-                const newExpiry = newDate.toISOString().slice(0,10);
-                localStorage.setItem(`dukapulse_${shopId}_expiry_v10`, newExpiry);
-                if(isFirstPayment) localStorage.setItem(`dukapulse_${shopId}_first_paid_v10`, "true");
-                setIsBlocked(false); setExpiry(newExpiry); setIsFirstPayment(false); setAdminCode(""); alert(`MANUAL UNLOCK ${newExpiry}`);
-              } else { alert("Wrong admin!"); }
-            }} style={{background:"#eee", border:"none", padding:"8px 12px", borderRadius:8, fontSize:11, fontWeight:700}}>Unlock</button>
-          </div>
-          <button onClick={()=>{ if(confirm("Logout?")){ localStorage.removeItem("dukapulse_current_shop"); setShopId(null); setIsBlocked(false);} }} style={{marginTop:8, background:"#f3f4f6", border:"none", padding:"6px 12px", borderRadius:8, fontSize:10}}>Logout</button>
         </div>
       </main>
     )
@@ -454,123 +410,8 @@ export default function Page() {
           </div>
         </div>
         <div style={{display:"flex", gap:6, marginTop:10, flexWrap:"wrap"}}>{["All",...Array.from(new Set(items.map(i=>i.category)))].map(cat=>(<button key={cat} onClick={()=>setCategory(cat)} style={{background: category===cat?"white":"rgba(255,255,255,0.2)", color: category===cat?"black":"white", border:"none", padding:"6px 12px", borderRadius:20, fontSize:11, fontWeight:700, cursor:"pointer"}}>{cat}</button>))}</div>
-        {isOwnerMode && <div style={{marginTop:10, background:"#facc15", color:"black", padding:"8px 12px", borderRadius:8, fontSize:12, fontWeight:700, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8}}><span>OWNER UNLOCKED - {isFirstPayment?`TRIAL till ${expiry}`:`Exp ${expiry}`}</span><div style={{display:"flex", gap:6}}><button onClick={()=>setShowAddForm(true)} style={{background:"black", color:"#facc15", border:"none", padding:"6px 14px", borderRadius:20, fontWeight:900, fontSize:12, cursor:"pointer"}}>ADD PRODUCT</button><button onClick={()=>setShowChangePin(true)} style={{background:"white", color:"black", border:"1px solid black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>Change PIN</button></div></div>}
       </div>
 
-      {ownerPinPrompt && (
-        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9998, padding:20}}>
-          <div style={{background:"white", padding:20, borderRadius:12, maxWidth:340, width:"100%"}}>
-            <h3 style={{margin:"0 0 10px 0"}}>Owner PIN Required</h3>
-            <input type="password" value={ownerPinInput} onChange={e=>setOwnerPinInput(e.target.value)} placeholder="Enter PIN" style={{width:"100%", padding:12, borderRadius:8, border:"2px solid black", marginTop:10}}/>
-            <div style={{display:"flex", gap:8, marginTop:12}}>
-              <button onClick={confirmOwnerPin} style={{flex:1, background:"black", color:"white", padding:12, borderRadius:8, fontWeight:800, border:"none", cursor:"pointer"}}>UNLOCK</button>
-              <button onClick={()=>{setOwnerPinPrompt(false); setOwnerPinInput("");}} style={{padding:12, borderRadius:8, border:"1px solid #ccc", background:"white", cursor:"pointer"}}>Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showChangePin && (
-        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999, padding:20}}>
-          <div style={{background:"white", padding:20, borderRadius:12, maxWidth:360, width:"100%"}}>
-            <h3 style={{margin:"0 0 10px 0"}}>Change Owner PIN</h3>
-            <input type="password" value={changePinData.oldPin} onChange={e=>setChangePinData({...changePinData, oldPin:e.target.value})} placeholder="Old PIN" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginTop:10}}/>
-            <input type="password" value={changePinData.newPin} onChange={e=>setChangePinData({...changePinData, newPin:e.target.value})} placeholder="New PIN (min 4 digits)" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginTop:8}}/>
-            <input type="password" value={changePinData.confirmPin} onChange={e=>setChangePinData({...changePinData, confirmPin:e.target.value})} placeholder="Confirm New PIN" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginTop:8}}/>
-            <div style={{display:"flex", gap:8, marginTop:12}}>
-              <button onClick={handleChangePin} style={{flex:1, background:"#16a34a", color:"white", padding:12, borderRadius:8, fontWeight:800, border:"none", cursor:"pointer"}}>SAVE NEW PIN</button>
-              <button onClick={()=>{setShowChangePin(false); setChangePinData({oldPin:"", newPin:"", confirmPin:""});}} style={{padding:12, borderRadius:8, border:"1px solid #ccc", background:"white", cursor:"pointer"}}>Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isOwnerMode && showAddForm && (
-        <div style={{background:"white", padding:16, borderRadius:12, marginBottom:12, border:"2px solid black"}}>
-          <h3 style={{margin:"0 0 10px 0"}}>Add New Product</h3>
-          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8}}>
-            <input value={newP.name} onChange={e=>setNewP({...newP, name:e.target.value})} placeholder="Product Name" style={{padding:10, borderRadius:8, border:"1px solid #ccc", gridColumn:"1 / -1"}}/>
-            <input type="number" value={newP.buy} onChange={e=>setNewP({...newP, buy:e.target.value})} placeholder="Buy Price" style={{padding:10, borderRadius:8, border:"1px solid #ccc"}}/>
-            <input type="number" value={newP.sell} onChange={e=>setNewP({...newP, sell:e.target.value})} placeholder="Sell Price" style={{padding:10, borderRadius:8, border:"1px solid #ccc"}}/>
-            <input type="number" value={newP.stock} onChange={e=>setNewP({...newP, stock:e.target.value})} placeholder="Initial Stock" style={{padding:10, borderRadius:8, border:"1px solid #ccc"}}/>
-            <select value={newP.category} onChange={e=>setNewP({...newP, category:e.target.value})} style={{padding:10, borderRadius:8, border:"1px solid #ccc"}}>
-              {["Cement","Iron Sheets","Nails","Timber","Paint","Plumbing","Electrical","Fittings","Tools","Steel","Fencing","Aggregates"].map(c=><option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <div style={{display:"flex", gap:8, marginTop:10}}>
-            <button onClick={handleAddNewProduct} style={{background:"#16a34a", color:"white", border:"none", padding:"10px 20px", borderRadius:8, fontWeight:800, cursor:"pointer"}}>SAVE PRODUCT</button>
-            <button onClick={()=>setShowAddForm(false)} style={{background:"#eee", border:"none", padding:"10px 20px", borderRadius:8, fontWeight:700, cursor:"pointer"}}>Cancel</button>
-          </div>
-        </div>
-      )}
-
-      {showProfit && (
-        <div style={{background:"#000", color:"#facc15", padding:16, borderRadius:12, marginBottom:12, border:"2px solid #facc15"}}>
-          {pin!==ownerPin? (
-            <div><h3>Owner PIN</h3><div style={{display:"flex", gap:8}}><input type="password" value={pin} onChange={e=>setPin(e.target.value)} placeholder="Enter PIN" style={{padding:10, borderRadius:8, flex:1}}/><button onClick={()=>{if(pin!==ownerPin) alert("Wrong PIN!");}} style={{padding:"10px 15px", borderRadius:8, background:"#facc15", fontWeight:800}}>Unlock</button><button onClick={()=>setShowProfit(false)} style={{padding:"10px 15px", borderRadius:8}}>Close</button></div></div>
-          ) : (
-            <div>
-              <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
-                <h3 style={{margin:0}}>PROFIT - {shopName}</h3>
-                <div style={{display:"flex", gap:6}}>
-                  <button onClick={()=>setCalendarView("today")} style={{background:calendarView==="today"?"#facc15":"#222", color:calendarView==="today"?"#000":"#fff", border:"none", padding:"6px 10px", borderRadius:6, fontSize:11, fontWeight:700}}>Today</button>
-                  <button onClick={()=>setCalendarView("week")} style={{background:calendarView==="week"?"#facc15":"#222", color:calendarView==="week"?"#000":"#fff", border:"none", padding:"6px 10px", borderRadius:6, fontSize:11, fontWeight:700}}>7 Days</button>
-                  <button onClick={()=>setCalendarView("month")} style={{background:calendarView==="month"?"#facc15":"#222", color:calendarView==="month"?"#000":"#fff", border:"none", padding:"6px 10px", borderRadius:6, fontSize:11, fontWeight:700}}>Month</button>
-                </div>
-              </div>
-              {calendarView==="today" && (
-                <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginTop:12}}>
-                  <div style={{background:"#111", padding:12, borderRadius:8, border:"1px solid #333"}}><div style={{fontSize:11, opacity:0.7}}>THIS CART</div><div style={{fontSize:13, marginTop:6}}>Sales: KES {totalSell.toLocaleString()}</div><div style={{fontSize:12}}>Cost: KES {totalBuy.toLocaleString()}</div><div style={{fontSize:13, color:"#4ade80", marginTop:6, fontWeight:800}}>Profit: KES {totalProfit.toLocaleString()}</div></div>
-                  <div style={{background:"#111", padding:12, borderRadius:8, border:"1px solid #333"}}><div style={{fontSize:11, opacity:0.7}}>TODAY SUMMARY</div><div style={{fontSize:13, marginTop:6}}>Sales Today: KES {salesToday.toLocaleString()}</div><div style={{fontSize:12}}>Profit Earned: KES {profitToday.toLocaleString()}</div></div>
-                  <div style={{background:"#facc15", color:"black", padding:14, borderRadius:10}}><div style={{fontSize:11, fontWeight:700}}>TODAY PROFIT (BIG)</div><div style={{fontSize:26, fontWeight:900, marginTop:4}}>KES {projectedProfitToday.toLocaleString()}</div></div>
-                </div>
-              )}
-              {calendarView==="week" && (
-                <div style={{marginTop:12}}>
-                  <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10}}>
-                    <div style={{background:"#facc15", color:"black", padding:12, borderRadius:8}}><div style={{fontSize:11}}>LAST 7 DAYS SALES</div><div style={{fontSize:22, fontWeight:900}}>KES {weekSales.toLocaleString()}</div></div>
-                    <div style={{background:"#fff", color:"black", padding:12, borderRadius:8}}><div style={{fontSize:11}}>LAST 7 DAYS PROFIT</div><div style={{fontSize:22, fontWeight:900}}>KES {weekProfit.toLocaleString()}</div></div>
-                  </div>
-                  <div style={{display:"grid", gridTemplateColumns:"repeat(7, 1fr)", gap:6}}>
-                    {last7.map(d=>(
-                      <div key={d.key} style={{background:d.key===todayKey?"#facc15":"#111", color:d.key===todayKey?"black":"#facc15", padding:8, borderRadius:8, border:"1px solid #333", textAlign:"center"}}>
-                        <div style={{fontSize:10, fontWeight:700}}>{d.date.toLocaleDateString('en-KE', {weekday:'short'})}</div>
-                        <div style={{fontSize:9}}>{d.key.slice(5)}</div>
-                        <div style={{fontSize:12, fontWeight:800, marginTop:4}}>{d.data? `KES ${d.data.profit.toLocaleString()}` : "KES 0"}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {calendarView==="month" && (
-                <div style={{marginTop:12}}>
-                  <div style={{background:"linear-gradient(135deg,#facc15,#f59e0b)", color:"black", padding:16, borderRadius:12, display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10}}>
-                    <div><div style={{fontSize:11, fontWeight:700}}>MONTH: {todayKey.slice(0,7)}</div><div style={{fontSize:24, fontWeight:900}}>KES {month.mSales.toLocaleString()}</div></div>
-                    <div><div style={{fontSize:11, fontWeight:700}}>TOTAL PROFIT</div><div style={{fontSize:24, fontWeight:900}}>KES {month.mProfit.toLocaleString()}</div></div>
-                    <div><div style={{fontSize:11, fontWeight:700}}>DAYS WORKED</div><div style={{fontSize:24, fontWeight:900}}>{month.entries.length || 1}</div></div>
-                  </div>
-                </div>
-              )}
-              <button onClick={()=>{setShowProfit(false); setPin("");}} style={{background:"#facc15", color:"black", padding:"8px 16px", borderRadius:8, fontWeight:800, border:"none", marginTop:12}}>Lock</button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {showPaid && (
-        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:10000, padding:20}}>
-          <div style={{background:"white", padding:30, borderRadius:16, maxWidth:360, width:"100%", textAlign:"center", border:"4px solid #16a34a"}}>
-            <div style={{fontSize:50}}>✅</div>
-            <h2 style={{color:"#16a34a", margin:"10px 0"}}>M-PESA PAID!</h2>
-            <div style={{background:"#f0fdf4", padding:12, borderRadius:10, marginTop:10}}>
-              <div style={{fontSize:12}}>CODE: <b>{paidCode}</b></div>
-              <div style={{fontSize:12}}>AMOUNT: <b>KES {paidAmount.toLocaleString()}</b></div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* KRA COMPLIANT RECEIPT - FIXED */}
       {receipt && (
         <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999, padding:20}}>
           <div style={{background:"white", padding:20, borderRadius:12, maxWidth:380, width:"100%", color:"black"}}>
@@ -581,7 +422,6 @@ export default function Page() {
               <h3 style={{margin:"6px 0 0 0", fontSize:12}}>DUKAPULSE RECEIPT</h3>
               <p style={{margin:0, fontSize:9, fontWeight:700, color:"green"}}>KRA eTIMS COMPLIANT</p>
             </div>
-
             <div style={{fontSize:11, marginTop:8, lineHeight:1.6}}>
               <div style={{display:"flex", justifyContent:"space-between"}}><span>ID:</span><span>{receipt.id}</span></div>
               <div style={{display:"flex", justifyContent:"space-between", fontWeight:800}}><span>KRA CU No:</span><span>{receipt.kraNo}</span></div>
@@ -591,17 +431,14 @@ export default function Page() {
               <div style={{display:"flex", justifyContent:"space-between"}}><span>Phone:</span><span>{receipt.phone}</span></div>
               <div style={{display:"flex", justifyContent:"space-between"}}><span>M-Pesa Code:</span><span style={{fontWeight:700}}>{receipt.mpesaCode}</span></div>
             </div>
-
             <div style={{borderTop:"1px dashed #999", margin:"8px 0", paddingTop:8, fontSize:11}}>
               {receipt.cart.map((c:any)=><div key={c.id} style={{display:"flex", justifyContent:"space-between", marginBottom:3}}><span>{c.name.slice(0,25)} x{c.qty}</span><span>KES {c.sell*c.qty}</span></div>)}
             </div>
-
             <div style={{borderTop:"1px solid black", borderBottom:"1px solid black", padding:"8px 0", fontSize:11}}>
               <div style={{display:"flex", justifyContent:"space-between"}}><span>Taxable Amount:</span><span>KES {receipt.vat.taxable}</span></div>
               <div style={{display:"flex", justifyContent:"space-between"}}><span>VAT 16%:</span><span>KES {receipt.vat.vat}</span></div>
               <div style={{display:"flex", justifyContent:"space-between", fontWeight:900, fontSize:14, marginTop:4}}><span>TOTAL</span><span>KES {receipt.total.toLocaleString()}</span></div>
             </div>
-
             <div style={{textAlign:"center", marginTop:10}}>
               <div style={{width:100, height:100, border:"2px solid black", margin:"0 auto", display:"flex", alignItems:"center", justifyContent:"center", fontSize:8, padding:4, fontWeight:800}}>
                 KRA eTIMS<br/>QR CODE<br/>{receipt.kraNo}
@@ -609,13 +446,7 @@ export default function Page() {
               <div style={{fontSize:7, marginTop:4, wordBreak:"break-all"}}>https://etims.kra.go.ke/verify/{receipt.kraNo}</div>
               <div style={{fontSize:8, fontWeight:800, marginTop:2}}>SCAN TO VERIFY ON KRA PORTAL</div>
             </div>
-
-            <div style={{textAlign:"center", fontSize:9, marginTop:10, color:"#666"}}>
-              Thank you! Goods once sold not returnable<br/>Powered by SKYNET CYBER - DukaPulse v1 - KRA Module
-            </div>
-
             <button onClick={closeReceipt} style={{width:"100%", background:"black", color:"white", padding:12, borderRadius:8, fontWeight:800, border:"none", marginTop:12, cursor:"pointer"}}>DONE - NEW SALE</button>
-            <button onClick={()=>window.print()} style={{width:"100%", background:"white", color:"black", padding:8, borderRadius:8, fontWeight:700, border:"1px solid black", marginTop:6}}>Print Receipt</button>
           </div>
         </div>
       )}
@@ -626,13 +457,7 @@ export default function Page() {
             <div key={item.id} style={{display:"flex", justifyContent:"space-between", alignItems:"center", padding:10, border: item.stock < 10? "2px solid red" : "1px solid #eee", borderRadius:10, background: item.stock < 10? "#fef2f2" : "white"}}>
               <div style={{flex:1}}>
                 <div style={{fontWeight:700, fontSize:12}}>{item.name} {item.stock < 10 && "LOW!"}</div>
-                <div style={{fontSize:10, color: item.stock < 10? "red" : "#666", fontWeight: item.stock < 10? 800 : 400}}>{item.category} • Stock {item.stock} • KES {item.sell}</div>
-                {isOwnerMode && (
-                  <div style={{display:"flex", gap:4, marginTop:6}}>
-                    <input type="number" value={restockInputs[item.id] || ""} onChange={e=>setRestockInputs({...restockInputs, [item.id]: e.target.value})} placeholder="+qty" style={{width:60, padding:4, border:"1px solid black", borderRadius:6, fontSize:11}}/>
-                    <button onClick={()=>handleRestock(item.id)} style={{background:"#16a34a", color:"white", border:"none", padding:"4px 8px", borderRadius:6, fontSize:10, fontWeight:800, cursor:"pointer"}}>RESTOCK</button>
-                  </div>
-                )}
+                <div style={{fontSize:10, color: item.stock < 10? "red" : "#666"}}>{item.category} • Stock {item.stock} • KES {item.sell}</div>
               </div>
               {!isOwnerMode && <button onClick={()=>addToCart(item)} style={{background:"#facc15", border:"none", padding:"6px 10px", borderRadius:8, fontWeight:800, fontSize:11, cursor:"pointer"}}>+</button>}
             </div>
@@ -640,17 +465,12 @@ export default function Page() {
         </div></div>
         <div style={{background:"white", borderRadius:12, padding:12, height:"fit-content", position:"sticky", top:10}}>
           <h3 style={{marginTop:0}}>Cart - {shopName}</h3>
-          {cart.map(c=>(<div key={c.id} style={{borderBottom:"1px solid #eee", padding:"6px 0"}}><div style={{display:"flex", justifyContent:"space-between", fontSize:12}}><span>{c.name.slice(0,20)} x{c.qty}</span><button onClick={()=>setCart(prev=>prev.filter(p=>p.id!==c.id))} style={{background:"#fee", border:"none", borderRadius:4, fontSize:10}}>X</button></div><div style={{display:"flex", gap:6, marginTop:4, alignItems:"center"}}><span style={{fontSize:11}}>Price:</span><input type="number" value={getSellPrice(c)} onChange={e=>updateCartPrice(c.id, parseInt(e.target.value)||0)} style={{width:90, padding:4, borderRadius:6, border:"1px solid #000", fontWeight:800}}/><span style={{fontSize:12, fontWeight:800}}>= {getSellPrice(c)*c.qty}</span></div></div>))}
-          {cart.length===0 && <div style={{fontSize:12, color:"#888"}}>Cart empty</div>}
+          {cart.map(c=>(<div key={c.id} style={{borderBottom:"1px solid #eee", padding:"6px 0"}}><div style={{display:"flex", justifyContent:"space-between", fontSize:12}}><span>{c.name.slice(0,20)} x{c.qty}</span><button onClick={()=>setCart(prev=>prev.filter(p=>p.id!==c.id))} style={{background:"#fee", border:"none", borderRadius:4, fontSize:10}}>X</button></div></div>))}
           <h2 style={{margin:"10px 0 4px 0"}}>Total: KES {totalSell.toLocaleString()}</h2>
-          <div style={{fontSize:11, background:"#fef9c3", padding:6, borderRadius:6, marginBottom:8}}>Cart Profit: KES {totalProfit.toLocaleString()}</div>
           <input value={customerName} onChange={e=>setCustomerName(e.target.value)} placeholder="Customer Name (optional)" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginBottom:6}}/>
           <input value={mpesaPhone} onChange={e=>setMpesaPhone(e.target.value)} placeholder="Customer M-Pesa 07xx (empty=CASH)" style={{width:"100%", padding:11, borderRadius:8, border:"2px solid black", margin:"8px 0"}}/>
           <button disabled={loading} onClick={handleSale} style={{width:"100%", background: loading?"#9ca3af":"#000", color:"white", border:"none", padding:14, borderRadius:10, fontWeight:900, cursor:"pointer"}}>{loading? status : "LIPA NA M-PESA / CASH"}</button>
           <button onClick={()=>setCart([])} style={{width:"100%", marginTop:6, background:"#f3f4f6", border:"none", padding:9, borderRadius:8, cursor:"pointer"}}>Clear Cart</button>
-          <div style={{fontSize:10, color:"#888", marginTop:8, textAlign:"center"}}>
-            KRA eTIMS Ready - VAT 16% Auto
-          </div>
         </div>
       </div>
     </main>
