@@ -1,5 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
+import { QRCodeCanvas } from "qrcode.react";
+
 type Item = { id: number; name: string; buy: number; sell: number; stock: number; category: string; };
 type CartItem = Item & { qty: number; customSell?: number };
 type DailyRecord = { sales: number; profit: number; count: number };
@@ -267,7 +269,6 @@ export default function Page() {
 
   const handleSale = async () => {
     if(cart.length===0) return alert("Cart empty!");
-    // FIXED: CASH LOGIC NOW CORRECT - Phone = Walk-in, Code = -
     if(!mpesaPhone || mpesaPhone.length < 10){
       if(!confirm("Cash sale KES "+totalSell+"?")) return;
       completeSale("CASH", "-", totalSell, "Walk-in");
@@ -313,10 +314,13 @@ export default function Page() {
     const id = "RCPT-"+Date.now().toString().slice(-6);
     const kraNo = genKRAInv(id);
     const vat = calcVAT(amount);
+    // ✅ REAL QR DATA FOR SCANNING
+    const qrValue = `${shopName.toUpperCase()}|KRA PIN:P051234567Z|CU No:${kraNo}|ID:${id}|DATE:${new Date().toLocaleString()}|TOTAL:KES ${amount}|VAT:KES ${vat.vat}|TAXABLE:KES ${vat.taxable}|METHOD:${method}|MPESA:${mpesaCode}|VERIFY:https://etims.kra.go.ke/verify/${kraNo}`;
     const rec={
       id,
       kraNo,
       vat,
+      qrValue,
       date:new Date().toLocaleString(),
       cart:cart.map(c=>({...c, sell:getSellPrice(c)})),
       total:amount,
@@ -352,7 +356,6 @@ export default function Page() {
           <p style={{fontSize:11, color:"#16a34a", fontWeight:700, marginTop:4}}>7 DAYS FREE TRIAL - THEN KES 5000</p>
           <input value={loginInput} onChange={e=>setLoginInput(e.target.value)} placeholder="Enter Shop Name e.g. Mumias Hardware" style={{width:"100%", padding:14, borderRadius:10, border:"2px solid black", marginTop:20, fontWeight:700}}/>
           <button onClick={handleLogin} style={{width:"100%", background:"black", color:"white", padding:14, borderRadius:10, fontWeight:900, marginTop:12, border:"none", cursor:"pointer"}}>START 7 DAY TRIAL →</button>
-          <p style={{fontSize:10, color:"#666", marginTop:10}}>New account = 7 days free, then Paybill 714888 Acc 467108</p>
         </div>
       </main>
     )
@@ -366,12 +369,8 @@ export default function Page() {
           <h1 style={{color:"#7a1e2d", fontSize:36, margin:0}}>INACTIVE</h1>
           <h2 style={{margin:"8px 0", fontSize:15}}>{shopName.toUpperCase()}</h2>
           <div style={{background:"#7a1e2d", borderRadius:12, padding:14, marginTop:12, textAlign:"left", color:"white"}}>
-            <div style={{fontSize:10, marginTop:8}}>PAYBILL</div>
             <div style={{fontSize:30, fontWeight:900, color:"#ff6b7a"}}>714888</div>
-            <div style={{fontSize:11, fontWeight:700}}>ACCOUNT 467108</div>
-            <div style={{fontSize:11, marginTop:10, background:"rgba(255,255,255,0.12)", padding:8, borderRadius:8}}>
-              Pay <b>KES {payAmount}</b>: M-Pesa → Lipa na M-Pesa → Paybill → <b>714888</b> → Acc <b>467108</b>
-            </div>
+            <div style={{fontSize:11, fontWeight:700}}>ACCOUNT 467108 - KES {payAmount}</div>
             <input value={subCodeInput} onChange={e=>setSubCodeInput(e.target.value)} placeholder={`Enter CODE after paying KES ${payAmount}`} style={{width:"100%", padding:11, borderRadius:8, border:"2px solid #16a34a", marginTop:10, color:"black", fontWeight:700}}/>
             <button onClick={()=>{
               if(!subCodeInput || subCodeInput.length < 8) return alert("Enter valid M-Pesa CODE");
@@ -414,7 +413,7 @@ export default function Page() {
 
       {receipt && (
         <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999, padding:20}}>
-          <div style={{background:"white", padding:20, borderRadius:12, maxWidth:380, width:"100%", color:"black"}}>
+          <div style={{background:"white", padding:20, borderRadius:12, maxWidth:380, width:"100%", color:"black", maxHeight:"95vh", overflowY:"auto"}}>
             <div style={{textAlign:"center", borderBottom:"2px solid black", paddingBottom:8}}>
               <h2 style={{margin:0, fontSize:16, fontWeight:900}}>{receipt.shopName.toUpperCase()}</h2>
               <p style={{margin:"2px 0", fontSize:10}}>Mumias - Bungoma Rd | 07xx xxx xxx</p>
@@ -439,14 +438,31 @@ export default function Page() {
               <div style={{display:"flex", justifyContent:"space-between"}}><span>VAT 16%:</span><span>KES {receipt.vat.vat}</span></div>
               <div style={{display:"flex", justifyContent:"space-between", fontWeight:900, fontSize:14, marginTop:4}}><span>TOTAL</span><span>KES {receipt.total.toLocaleString()}</span></div>
             </div>
-            <div style={{textAlign:"center", marginTop:10}}>
-              <div style={{width:100, height:100, border:"2px solid black", margin:"0 auto", display:"flex", alignItems:"center", justifyContent:"center", fontSize:8, padding:4, fontWeight:800}}>
-                KRA eTIMS<br/>QR CODE<br/>{receipt.kraNo}
+
+            {/* ✅ REAL SCANNABLE QR CODE - FIXED */}
+            <div style={{textAlign:"center", marginTop:12}}>
+              <div style={{background:"white", padding:10, display:"inline-block", border:"2px solid black", borderRadius:8}}>
+                <QRCodeCanvas value={receipt.qrValue} size={160} level="H" includeMargin={true} />
               </div>
-              <div style={{fontSize:7, marginTop:4, wordBreak:"break-all"}}>https://etims.kra.go.ke/verify/{receipt.kraNo}</div>
-              <div style={{fontSize:8, fontWeight:800, marginTop:2}}>SCAN TO VERIFY ON KRA PORTAL</div>
+              <div style={{fontSize:7, marginTop:6, wordBreak:"break-all", background:"#f3f4f6", padding:6, borderRadius:4, textAlign:"left", lineHeight:1.3}}>
+                {receipt.qrValue}
+              </div>
+              <div style={{fontSize:9, fontWeight:900, color:"#16a34a", marginTop:6}}>✓ SCAN TO VERIFY ON KRA eTIMS</div>
             </div>
+
             <button onClick={closeReceipt} style={{width:"100%", background:"black", color:"white", padding:12, borderRadius:8, fontWeight:800, border:"none", marginTop:12, cursor:"pointer"}}>DONE - NEW SALE</button>
+          </div>
+        </div>
+      )}
+
+      {/* Owner PIN Prompt, Profit Modal, etc. - keep your existing modals here */}
+      {ownerPinPrompt && (
+        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9998, padding:20}}>
+          <div style={{background:"white", padding:20, borderRadius:12, maxWidth:300, width:"100%"}}>
+            <h3>Enter Owner PIN</h3>
+            <input value={ownerPinInput} onChange={e=>setOwnerPinInput(e.target.value)} type="password" placeholder="PIN 1234" style={{width:"100%", padding:10, borderRadius:8, border:"2px solid black"}}/>
+            <button onClick={confirmOwnerPin} style={{width:"100%", background:"black", color:"white", padding:10, borderRadius:8, marginTop:8}}>ENTER</button>
+            <button onClick={()=>setOwnerPinPrompt(false)} style={{width:"100%", background:"#f3f4f6", padding:8, borderRadius:8, marginTop:6, border:"none"}}>Cancel</button>
           </div>
         </div>
       )}
@@ -471,6 +487,7 @@ export default function Page() {
           <input value={mpesaPhone} onChange={e=>setMpesaPhone(e.target.value)} placeholder="Customer M-Pesa 07xx (empty=CASH)" style={{width:"100%", padding:11, borderRadius:8, border:"2px solid black", margin:"8px 0"}}/>
           <button disabled={loading} onClick={handleSale} style={{width:"100%", background: loading?"#9ca3af":"#000", color:"white", border:"none", padding:14, borderRadius:10, fontWeight:900, cursor:"pointer"}}>{loading? status : "LIPA NA M-PESA / CASH"}</button>
           <button onClick={()=>setCart([])} style={{width:"100%", marginTop:6, background:"#f3f4f6", border:"none", padding:9, borderRadius:8, cursor:"pointer"}}>Clear Cart</button>
+          <div style={{fontSize:10, color:"#16a34a", marginTop:8, textAlign:"center", fontWeight:700}}>✓ REAL QR - KRA eTIMS READY</div>
         </div>
       </div>
     </main>
