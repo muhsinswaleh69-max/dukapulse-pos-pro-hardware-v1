@@ -103,7 +103,8 @@ export default function Page() {
   const [ownerPinInput, setOwnerPinInput] = useState("");
   const [ownerPin, setOwnerPin] = useState("1234");
   const [showChangePin, setShowChangePin] = useState(false);
-  const [expiry, setExpiry] = useState("2026-10-22");
+  const [changePinData, setChangePinData] = useState({oldPin:"", newPin:"", confirmPin:""});
+  const [expiry, setExpiry] = useState("2026-10-23");
   const [daysLeftState, setDaysLeftState] = useState(7);
 
   useEffect(()=>{
@@ -157,6 +158,16 @@ export default function Page() {
   const confirmOwnerPin = () => {
     if(ownerPinInput === ownerPin){ setIsOwnerMode(true); setOwnerPinPrompt(false); setOwnerPinInput(""); }
     else { alert("Wrong PIN!"); setOwnerPinInput(""); }
+  };
+  const handleChangePin = () => {
+    if(changePinData.oldPin!== ownerPin) return alert("Old PIN wrong! Current PIN is "+ownerPin);
+    if(changePinData.newPin.length < 4) return alert("New PIN must be 4+ digits");
+    if(changePinData.newPin!== changePinData.confirmPin) return alert("PINs don't match!");
+    setOwnerPin(changePinData.newPin);
+    if(shopId) localStorage.setItem(`dukapulse_${shopId}_owner_pin_v10`, changePinData.newPin);
+    setChangePinData({oldPin:"", newPin:"", confirmPin:""});
+    setShowChangePin(false);
+    alert(`PIN CHANGED! New PIN: ${changePinData.newPin}`);
   };
   const handleRestock = (id: number) => {
     const addQty = parseInt(restockInputs[id] || "0");
@@ -252,7 +263,7 @@ export default function Page() {
           <div style={{fontWeight:900, fontSize:12}}>OWNER UNLOCKED - TRIAL till {expiry}</div>
           <div style={{display:"flex", gap:8}}>
             <button onClick={()=>setShowAddForm(true)} style={{background:"black", color:"#facc15", border:"none", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>ADD PRODUCT</button>
-            <button onClick={()=>setShowChangePin(true)} style={{background:"white", color:"black", border:"2px solid black", padding:"6px 14px", borderRadius:20, fontWeight:700, fontSize:12}}>Change PIN</button>
+            <button onClick={()=>setShowChangePin(true)} style={{background:"white", color:"black", border:"2px solid black", padding:"6px 14px", borderRadius:20, fontWeight:700, fontSize:12, cursor:"pointer"}}>Change PIN</button>
           </div>
         </div>
       )}
@@ -298,7 +309,7 @@ export default function Page() {
             {filtered.map(item=>(
               <div key={item.id} style={{padding:8, border:"1px solid #eee", borderRadius:8, background:"white"}}>
                 <div style={{fontWeight:700, fontSize:11}}>{item.name}</div>
-                <div style={{fontSize:9, color:"#666"}}>Cement - Stock {item.stock} - KES {item.buy} - {item.sell}</div>
+                <div style={{fontSize:9, color:"#666"}}>Stock {item.stock} - KES {item.buy} - {item.sell}</div>
                 {isOwnerMode? (
                   <div style={{display:"flex", gap:4, marginTop:6}}>
                     <input value={restockInputs[item.id]||""} onChange={e=>setRestockInputs({...restockInputs, [item.id]: e.target.value})} placeholder="+qty" style={{width:60, padding:4, borderRadius:4, border:"1px solid #ccc", fontSize:11}}/>
@@ -388,6 +399,21 @@ export default function Page() {
           </div>
         </div>
       )}
+
+      {showChangePin && (
+        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:10000, padding:20}}>
+          <div style={{background:"white", padding:20, borderRadius:12, maxWidth:320, width:"100%"}}>
+            <h3 style={{marginTop:0}}>Change Owner PIN</h3>
+            <p style={{fontSize:11, color:"#666"}}>Current PIN: {ownerPin}</p>
+            <input value={changePinData.oldPin} onChange={e=>setChangePinData({...changePinData, oldPin:e.target.value})} placeholder="Old PIN" type="password" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginBottom:8}}/>
+            <input value={changePinData.newPin} onChange={e=>setChangePinData({...changePinData, newPin:e.target.value})} placeholder="New PIN (4 digits)" type="password" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginBottom:8}}/>
+            <input value={changePinData.confirmPin} onChange={e=>setChangePinData({...changePinData, confirmPin:e.target.value})} placeholder="Confirm New PIN" type="password" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginBottom:8}}/>
+            <button onClick={handleChangePin} style={{width:"100%", background:"black", color:"white", padding:12, borderRadius:8, fontWeight:800, border:"none", cursor:"pointer"}}>CHANGE PIN</button>
+            <button onClick={()=>setShowChangePin(false)} style={{width:"100%", background:"#f3f4f6", padding:10, borderRadius:8, border:"none", marginTop:6, cursor:"pointer"}}>Cancel</button>
+          </div>
+        </div>
+      )}
+
     </main>
   );
 }
