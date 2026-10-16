@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 
 type Item = { id: number; name: string; buy: number; sell: number; stock: number; category: string; };
-type CartItem = Item & { qty: number; customSell?: number };
+type CartItem = Item & { qty: number; customSell: number };
 type DailyRecord = { sales: number; profit: number; count: number };
 
 const INITIAL_ITEMS: Item[] = [
@@ -77,16 +77,8 @@ const INITIAL_ITEMS: Item[] = [
 ];
 
 function getTodayKey() { return new Date().toISOString().slice(0,10); }
-function getDateKey(d: Date) { return d.toISOString().slice(0,10); }
-function calcVAT(total: number){
-  const taxable = total / 1.16;
-  const vat = total - taxable;
-  return { taxable: taxable.toFixed(2), vat: vat.toFixed(2), total: total.toFixed(2) };
-}
-function genKRAInv(id: string){
-  const date = new Date().toISOString().slice(0,10).replace(/-/g,'');
-  return `CUINV-${date}-${id.slice(-4)}`;
-}
+function calcVAT(total: number){ const taxable = total / 1.16; const vat = total - taxable; return { taxable: taxable.toFixed(2), vat: vat.toFixed(2), total: total.toFixed(2) }; }
+function genKRAInv(id: string){ const date = new Date().toISOString().slice(0,10).replace(/-/g,''); return `CUINV-${date}-${id.slice(-4)}`; }
 
 export default function Page() {
   const [shopId, setShopId] = useState<string | null>(null);
@@ -98,13 +90,10 @@ export default function Page() {
   const [mpesaPhone, setMpesaPhone] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [receipt, setReceipt] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState("");
   const [salesToday, setSalesToday] = useState(0);
   const [profitToday, setProfitToday] = useState(0);
   const [history, setHistory] = useState<Record<string, DailyRecord>>({});
-  const [showProfit, setShowProfit] = useState(false);
-  const [calendarView, setCalendarView] = useState<"today"|"week"|"month">("today");
+  const [profitView, setProfitView] = useState<"Today"|"7 Days"|"Month">("Month");
   const [loginInput, setLoginInput] = useState("");
   const [isOwnerMode, setIsOwnerMode] = useState(false);
   const [restockInputs, setRestockInputs] = useState<Record<number, string>>({});
@@ -114,11 +103,8 @@ export default function Page() {
   const [ownerPinInput, setOwnerPinInput] = useState("");
   const [ownerPin, setOwnerPin] = useState("1234");
   const [showChangePin, setShowChangePin] = useState(false);
-  const [changePinData, setChangePinData] = useState({oldPin:"", newPin:"", confirmPin:""});
-  const [isBlocked, setIsBlocked] = useState(false);
-  const [expiry, setExpiry] = useState("");
-  const [subCodeInput, setSubCodeInput] = useState("");
-  const [isFirstPayment, setIsFirstPayment] = useState(true);
+  const [expiry, setExpiry] = useState("2026-10-22");
+  const [daysLeftState, setDaysLeftState] = useState(7);
 
   useEffect(()=>{
     const savedShop = localStorage.getItem("dukapulse_current_shop");
@@ -131,50 +117,35 @@ export default function Page() {
     const salesKey = `dukapulse_${shopId}_sales_today_v10`;
     const profitKey = `dukapulse_${shopId}_profit_today_v10`;
     const histKey = `dukapulse_${shopId}_history_v10`;
-    const dateKey = `dukapulse_${shopId}_last_date_v10`;
     const pinKey = `dukapulse_${shopId}_owner_pin_v10`;
     const expiryKey = `dukapulse_${shopId}_expiry_v10`;
-    const firstPayKey = `dukapulse_${shopId}_first_paid_v10`;
-
     const saved = localStorage.getItem(stockKey);
     const savedSales = localStorage.getItem(salesKey);
     const savedProfit = localStorage.getItem(profitKey);
     const savedHist = localStorage.getItem(histKey);
-    const savedDate = localStorage.getItem(dateKey);
     const savedPin = localStorage.getItem(pinKey);
     let savedExpiry = localStorage.getItem(expiryKey);
-    let savedFirstPaid = localStorage.getItem(firstPayKey);
-
     if(savedPin) setOwnerPin(savedPin);
-    if(!savedExpiry){
-      const now = new Date();
-      const trialEnd = new Date(); trialEnd.setDate(now.getDate()+7);
-      savedExpiry = trialEnd.toISOString().slice(0,10);
-      localStorage.setItem(expiryKey, savedExpiry);
-      localStorage.setItem(firstPayKey, "false");
+    if(savedExpiry){
+      setExpiry(savedExpiry);
+      const today = new Date(); today.setHours(0,0,0,0);
+      const exp = new Date(savedExpiry); exp.setHours(0,0,0,0);
+      const diff = Math.ceil((exp.getTime() - today.getTime()) / (1000*60*60*24));
+      setDaysLeftState(diff > 0? diff : 0);
     } else {
-      setIsFirstPayment(savedFirstPaid!== "true");
+      const trialEnd = new Date(); trialEnd.setDate(trialEnd.getDate()+7);
+      const expStr = trialEnd.toISOString().slice(0,10);
+      setExpiry(expStr);
+      localStorage.setItem(expiryKey, expStr);
     }
-    setExpiry(savedExpiry);
-    if(new Date().toISOString().slice(0,10) > savedExpiry) setIsBlocked(true);
-
-    const today = getTodayKey();
     if(saved){ try{ const p=JSON.parse(saved); if(p.length>0) setItems(p);}catch{} }
     if(savedHist){ try{ setHistory(JSON.parse(savedHist)); }catch{} }
-    if(savedDate!== today){
-      localStorage.setItem(dateKey, today);
-      setSalesToday(0); setProfitToday(0);
-      localStorage.setItem(salesKey, "0");
-      localStorage.setItem(profitKey, "0");
-    } else {
-      if(savedSales) setSalesToday(Number(savedSales));
-      if(savedProfit) setProfitToday(Number(savedProfit));
-    }
+    if(savedSales) setSalesToday(Number(savedSales));
+    if(savedProfit) setProfitToday(Number(savedProfit));
   }, [shopId]);
 
   const saveStock = (newItems: Item[]) => { if(!shopId) return; setItems(newItems); localStorage.setItem(`dukapulse_${shopId}_stock_v10`, JSON.stringify(newItems)); };
   const saveHistory = (newHist: Record<string, DailyRecord>) => { if(!shopId) return; setHistory(newHist); localStorage.setItem(`dukapulse_${shopId}_history_v10`, JSON.stringify(newHist)); };
-  const saveOwnerPin = (newPin: string) => { if(!shopId) return; setOwnerPin(newPin); localStorage.setItem(`dukapulse_${shopId}_owner_pin_v10`, newPin); };
 
   const handleLogin = () => {
     if(!loginInput.trim()) return alert("Enter shop name");
@@ -182,36 +153,20 @@ export default function Page() {
     localStorage.setItem("dukapulse_current_shop", id);
     setShopId(id); setShopName(loginInput.trim());
   };
-  const handleLogout = () => {
-    if(confirm("Logout? Data will stay safe.")){
-      localStorage.removeItem("dukapulse_current_shop");
-      setShopId(null); setCart([]); setShopName(""); setIsOwnerMode(false);
-    }
-  };
   const tryEnterOwnerMode = () => { if(isOwnerMode){ setIsOwnerMode(false); return; } setOwnerPinPrompt(true); };
   const confirmOwnerPin = () => {
     if(ownerPinInput === ownerPin){ setIsOwnerMode(true); setOwnerPinPrompt(false); setOwnerPinInput(""); }
     else { alert("Wrong PIN!"); setOwnerPinInput(""); }
   };
-  const handleChangePin = () => {
-    if(changePinData.oldPin!== ownerPin) return alert("Old PIN wrong!");
-    if(changePinData.newPin.length < 4) return alert("PIN must be 4+ digits!");
-    if(changePinData.newPin!== changePinData.confirmPin) return alert("PINs don't match!");
-    saveOwnerPin(changePinData.newPin);
-    setChangePinData({oldPin:"", newPin:"", confirmPin:""});
-    setShowChangePin(false);
-    alert(`PIN CHANGED to ${changePinData.newPin}`);
-  };
   const handleRestock = (id: number) => {
-    const addStr = restockInputs[id] || "0";
-    const addQty = parseInt(addStr);
-    if(!addQty || addQty <=0) return alert("Enter quantity e.g. 50");
+    const addQty = parseInt(restockInputs[id] || "0");
+    if(!addQty) return alert("Enter qty");
     const newItems = items.map(it => it.id===id? {...it, stock: it.stock + addQty} : it);
     saveStock(newItems);
     setRestockInputs(prev => ({...prev, [id]: ""}));
   };
   const handleAddNewProduct = () => {
-    if(!newP.name ||!newP.buy ||!newP.sell ||!newP.stock) return alert("Fill all fields");
+    if(!newP.name ||!newP.buy ||!newP.sell ||!newP.stock) return alert("Fill all");
     const newItem: Item = { id: Date.now(), name: newP.name, buy: parseInt(newP.buy), sell: parseInt(newP.sell), stock: parseInt(newP.stock), category: newP.category };
     saveStock([...items, newItem]);
     setNewP({name:"", buy:"", sell:"", stock:"", category:"Cement"});
@@ -220,49 +175,34 @@ export default function Page() {
 
   const filtered = items.filter(i => i.name.toLowerCase().includes(search.toLowerCase()) && (category==="All" || i.category===category));
   const addToCart = (item: Item) => {
-    if(item.stock<=0) return alert("Out of stock - RESTOCK in Owner mode!");
+    if(item.stock<=0) return alert("Out of stock - RESTOCK!");
     setCart(prev => {
       const f = prev.find(p=>p.id===item.id);
       if(f) return prev.map(p=>p.id===item.id?{...p, qty:p.qty+1}:p);
       return [...prev, {...item, qty:1, customSell: item.sell}];
     });
   };
-  const getSellPrice = (c: CartItem) => c.customSell?? c.sell;
-  const totalSell = cart.reduce((s,i)=>s+getSellPrice(i)*i.qty,0);
+  const updateCartPrice = (id: number, newPrice: string) => {
+    const price = parseInt(newPrice) || 0;
+    setCart(prev => prev.map(p=> p.id===id? {...p, customSell: price} : p));
+  };
+  const updateCartQty = (id: number, newQty: string) => {
+    const qty = parseInt(newQty) || 1;
+    setCart(prev => prev.map(p=> p.id===id? {...p, qty: qty} : p));
+  };
+
+  const totalSell = cart.reduce((s,i)=>s+i.customSell*i.qty,0);
   const totalBuy = cart.reduce((s,i)=>s+i.buy*i.qty,0);
   const totalProfit = totalSell - totalBuy;
-  const todayKey = getTodayKey();
-  const getLast7Days = () => {
-    const days = [];
-    for(let i=0;i<7;i++){ const d=new Date(); d.setDate(d.getDate()-i); const k=getDateKey(d); days.push({key:k, date:d, data: history[k] || (k===todayKey? {sales:salesToday, profit:profitToday, count:0} : undefined)}); }
-    return days;
-  };
-  const getThisMonth = () => {
-    const entries = Object.entries(history).filter(([k])=> k.startsWith(todayKey.slice(0,7)));
-    let mSales = entries.reduce((s,[,v])=>s+v.sales,0);
-    let mProfit = entries.reduce((s,[,v])=>s+v.profit,0);
-    if(!entries.find(([k])=>k===todayKey)){ mSales+=salesToday; mProfit+=profitToday; }
-    return {mSales, mProfit, entries};
-  };
-  const handleSale = async () => {
+  const monthKey = getTodayKey().slice(0,7);
+  const monthData = Object.entries(history).filter(([k])=> k.startsWith(monthKey));
+  const monthSales = monthData.reduce((s,[,v])=>s+v.sales,0) + salesToday;
+  const monthProfit = monthData.reduce((s,[,v])=>s+v.profit,0) + profitToday;
+  const daysWorked = monthData.length + (salesToday>0?1:0) || 1;
+
+  const handleSale = () => {
     if(cart.length===0) return alert("Cart empty!");
-    if(!mpesaPhone || mpesaPhone.length < 10){
-      if(!confirm("Cash sale KES "+totalSell+"?")) return;
-      completeSale("CASH", "-", totalSell, "Walk-in");
-      return;
-    }
-    setLoading(true);
-    setStatus("STK Push...");
-    try{
-      const resp = await fetch("/api/mpesa", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({phone: mpesaPhone, amount: totalSell, shopId}) });
-      const data = await resp.json();
-      if(!resp.ok) throw new Error(data.error || "STK failed");
-      setStatus("STK Sent! Enter PIN...");
-      setTimeout(()=>completeSale("M-PESA", data.Code || "PAID", totalSell, mpesaPhone), 2000);
-    }catch(e:any){ alert(e.message); setLoading(false); }
-  };
-  const completeSale = (method: string, mpesaCode: string, amount: number, customerPhone: string) => {
-    if(!shopId) return;
+    if(!confirm(`Sell KES ${totalSell}?`)) return;
     let newItems=[...items];
     cart.forEach(c=>{ newItems=newItems.map(it=> it.id===c.id? {...it, stock: it.stock - c.qty} : it); });
     saveStock(newItems);
@@ -271,256 +211,183 @@ export default function Page() {
     if(!newHist[key]) newHist[key] = {sales:0, profit:0, count:0};
     newHist[key] = {sales: newHist[key].sales + totalSell, profit: newHist[key].profit + totalProfit, count: newHist[key].count + 1};
     saveHistory(newHist);
-    setSalesToday(s=>{const ns=s+totalSell; localStorage.setItem(`dukapulse_${shopId}_sales_today_v10`, String(ns)); return ns;});
-    setProfitToday(p=>{const np=p+totalProfit; localStorage.setItem(`dukapulse_${shopId}_profit_today_v10`, String(np)); return np;});
+    setSalesToday(s=>{const ns=s+totalSell; if(shopId) localStorage.setItem(`dukapulse_${shopId}_sales_today_v10`, String(ns)); return ns;});
+    setProfitToday(p=>{const np=p+totalProfit; if(shopId) localStorage.setItem(`dukapulse_${shopId}_profit_today_v10`, String(np)); return np;});
     const id = "RCPT-"+Date.now().toString().slice(-6);
     const kraNo = genKRAInv(id);
-    const vat = calcVAT(amount);
-    const qrValue = `${shopName.toUpperCase()}|KRA PIN:P051234567Z|CU:${kraNo}|ID:${id}|DATE:${new Date().toLocaleString()}|TOTAL:KES ${amount}|VAT:KES ${vat.vat}|VERIFY:https://etims.kra.go.ke/verify/${kraNo}`;
-    const rec={ id, kraNo, vat, qrValue, date:new Date().toLocaleString(), cart:cart.map(c=>({...c, sell:getSellPrice(c)})), total:amount, phone: customerPhone, customer: customerName || "Walk-in Customer", method, mpesaCode, shopId, shopName, kraPin: "P051234567Z" };
-    setReceipt(rec); setLoading(false); setStatus("Paid!");
+    const vat = calcVAT(totalSell);
+    const qrValue = `${shopName.toUpperCase()}|KRA PIN:P051234567Z|CU:${kraNo}|ID:${id}|TOTAL:KES ${totalSell}|VERIFY:https://etims.kra.go.ke/verify/${kraNo}`;
+    const rec={ id, kraNo, vat, qrValue, date:new Date().toLocaleString(), cart, total:totalSell, phone: mpesaPhone || "Walk-in", customer: customerName || "Walk-in", method: mpesaPhone? "M-PESA" : "CASH", mpesaCode: mpesaPhone? "PAID" : "-", shopName, kraPin: "P051234567Z" };
+    setReceipt(rec);
   };
-  const closeReceipt=()=>{setReceipt(null); setCart([]); setMpesaPhone(""); setCustomerName(""); setStatus("");};
-  const last7 = getLast7Days();
-  const month = getThisMonth();
-  const weekSales = last7.reduce((s,d)=> s + (d.data?.sales||0), 0);
-  const weekProfit = last7.reduce((s,d)=> s + (d.data?.profit||0), 0);
-  const daysLeft = () => {
-    if(!expiry) return 0;
-    const today = new Date(); today.setHours(0,0,0,0);
-    const exp = new Date(expiry); exp.setHours(0,0,0,0);
-    return Math.ceil((exp.getTime() - today.getTime()) / (1000*60*60*24));
-  };
+  const closeReceipt=()=>{setReceipt(null); setCart([]); setMpesaPhone(""); setCustomerName("");};
 
   if(!shopId){
     return (
       <main style={{fontFamily:"system-ui", minHeight:"100vh", background:"linear-gradient(135deg,#000,#2563eb)", display:"flex", alignItems:"center", justifyContent:"center", padding:20}}>
         <div style={{background:"white", padding:30, borderRadius:16, maxWidth:420, width:"100%", textAlign:"center"}}>
           <h1 style={{margin:0, fontWeight:900, fontSize:22}}>DUKAPULSE - LOGIN</h1>
-          <input value={loginInput} onChange={e=>setLoginInput(e.target.value)} placeholder="Enter Shop Name e.g. Mumias Hardware" style={{width:"100%", padding:14, borderRadius:10, border:"2px solid black", marginTop:20, fontWeight:700}}/>
+          <input value={loginInput} onChange={e=>setLoginInput(e.target.value)} placeholder="Enter Shop Name e.g. Shianda Hardware" style={{width:"100%", padding:14, borderRadius:10, border:"2px solid black", marginTop:20, fontWeight:700}}/>
           <button onClick={handleLogin} style={{width:"100%", background:"black", color:"white", padding:14, borderRadius:10, fontWeight:900, marginTop:12, border:"none", cursor:"pointer"}}>START →</button>
         </div>
       </main>
     )
   }
 
-  if(isBlocked){
-    const payAmount = isFirstPayment? 5000 : 1500;
-    return (
-      <main style={{fontFamily:"system-ui", minHeight:"100vh", background:"#000", display:"flex", alignItems:"center", justifyContent:"center", padding:20}}>
-        <div style={{background:"white", padding:22, borderRadius:16, maxWidth:440, width:"100%", textAlign:"center", border:"4px solid #7a1e2d"}}>
-          <h1 style={{color:"#7a1e2d", fontSize:36, margin:0}}>INACTIVE</h1>
-          <h2 style={{margin:"8px 0", fontSize:15}}>{shopName.toUpperCase()}</h2>
-          <div style={{background:"#7a1e2d", borderRadius:12, padding:14, marginTop:12, textAlign:"left", color:"white"}}>
-            <div style={{fontSize:30, fontWeight:900, color:"#ff6b7a"}}>714888</div>
-            <div style={{fontSize:11, fontWeight:700}}>ACCOUNT 467108 - KES {payAmount}</div>
-            <input value={subCodeInput} onChange={e=>setSubCodeInput(e.target.value)} placeholder={`Enter CODE after paying KES ${payAmount}`} style={{width:"100%", padding:11, borderRadius:8, border:"2px solid #16a34a", marginTop:10, color:"black", fontWeight:700}}/>
-            <button onClick={()=>{
-              if(!subCodeInput || subCodeInput.length < 8) return alert("Enter valid M-Pesa CODE");
-              const newDate = new Date(); newDate.setDate(newDate.getDate()+30);
-              const newExpiry = newDate.toISOString().slice(0,10);
-              localStorage.setItem(`dukapulse_${shopId}_expiry_v10`, newExpiry);
-              localStorage.setItem(`dukapulse_${shopId}_first_paid_v10`, "true");
-              setIsBlocked(false); setExpiry(newExpiry); setIsFirstPayment(false); setSubCodeInput("");
-              alert(`PAID! Unlocked till ${newExpiry}`);
-            }} style={{width:"100%", background:"#16a34a", color:"white", padding:12, borderRadius:8, fontWeight:900, border:"none", marginTop:8, cursor:"pointer"}}>VERIFY & UNLOCK</button>
-          </div>
-        </div>
-      </main>
-    )
-  }
-
   return (
-    <main style={{fontFamily:"system-ui", padding:12, maxWidth:1300, margin:"0 auto", background:"#f5f7fb", minHeight:"100vh"}}>
-      <div style={{background:"linear-gradient(135deg,#000,#2563eb)", color:"white", padding:16, borderRadius:14, marginBottom:12}}>
-        <div style={{display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:10}}>
-          <div>
-            <h1 style={{margin:0, fontSize:18, fontWeight:900}}>DUKAPULSE - {shopName.toUpperCase()} {isOwnerMode && <span style={{background:"#facc15", color:"black", padding:"2px 8px", borderRadius:10, fontSize:11}}>OWNER MODE</span>}</h1>
-            <p style={{margin:"4px 0 0 0", fontSize:11, opacity:0.9}}>{items.length} Items ● Today KES {salesToday.toLocaleString()} ● Profit KES {profitToday.toLocaleString()} ● {isFirstPayment? `TRIAL: ${daysLeft()} days` : `Exp: ${expiry}`}</p>
-          </div>
-          <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>
-            <button onClick={tryEnterOwnerMode} style={{background: isOwnerMode? "#facc15" : "white", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>{isOwnerMode? "Selling Mode" : "Owner Restock"}</button>
-            <button onClick={handleLogout} style={{background:"white", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>Logout</button>
-            <button onClick={()=>setShowProfit(true)} style={{background:"#000", color:"#facc15", border:"1px solid #facc15", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>MY PROFIT</button>
-          </div>
+    <main style={{fontFamily:"system-ui", padding:10, maxWidth:1400, margin:"0 auto", background:"#f0f2f5", minHeight:"100vh"}}>
+      <div style={{background:"linear-gradient(135deg,#000,#1e40af)", color:"white", padding:12, borderRadius:12, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8}}>
+        <div>
+          <h1 style={{margin:0, fontSize:15, fontWeight:900}}>DUKAPULSE - {shopName.toUpperCase()} {isOwnerMode? "(Owner)" : ""}</h1>
+          <p style={{margin:"2px 0 0 0", fontSize:10, opacity:0.8}}>{items.length} Items ● Today KES {salesToday.toLocaleString()} ● Profit KES {profitToday.toLocaleString()}</p>
         </div>
-        <div style={{display:"flex", gap:6, marginTop:10, flexWrap:"wrap"}}>{["All",...Array.from(new Set(items.map(i=>i.category)))].map(cat=>(<button key={cat} onClick={()=>setCategory(cat)} style={{background: category===cat?"white":"rgba(255,255,255,0.2)", color: category===cat?"black":"white", border:"none", padding:"6px 12px", borderRadius:20, fontSize:11, fontWeight:700, cursor:"pointer"}}>{cat}</button>))}</div>
-        {isOwnerMode && <div style={{marginTop:10, display:"flex", gap:8}}><button onClick={()=>setShowAddForm(true)} style={{background:"#16a34a", color:"white", border:"none", padding:"8px 14px", borderRadius:8, fontWeight:800, fontSize:12, cursor:"pointer"}}>+ ADD NEW PRODUCT</button><button onClick={()=>setShowChangePin(true)} style={{background:"white", color:"black", border:"none", padding:"8px 14px", borderRadius:8, fontWeight:700, fontSize:12}}>Change PIN</button></div>}
+        <div style={{display:"flex", gap:8}}>
+          <button onClick={tryEnterOwnerMode} style={{background: isOwnerMode? "#facc15" : "white", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>{isOwnerMode? "Selling Mode" : "Owner Restock"}</button>
+          <button onClick={()=>{localStorage.removeItem("dukapulse_current_shop"); setShopId(null);}} style={{background:"white", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:700, fontSize:12, border:"none"}}>Logout</button>
+        </div>
       </div>
 
-      {showProfit && (
-        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999, padding:20}}>
-          <div style={{background:"white", padding:20, borderRadius:16, maxWidth:500, width:"100%", maxHeight:"90vh", overflowY:"auto"}}>
-            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
-              <h2 style={{margin:0}}>MY PROFIT - {shopName.toUpperCase()}</h2>
-              <button onClick={()=>setShowProfit(false)} style={{background:"#fee", border:"none", padding:"6px 12px", borderRadius:8, fontWeight:800}}>X</button>
-            </div>
-            <div style={{display:"flex", gap:8, marginTop:12}}>
-              {["today","week","month"].map(v=><button key={v} onClick={()=>setCalendarView(v as any)} style={{flex:1, background: calendarView===v?"black":"#f3f4f6", color: calendarView===v?"white":"black", border:"none", padding:"8px", borderRadius:8, fontWeight:700, fontSize:12, cursor:"pointer"}}>{v.toUpperCase()}</button>)}
-            </div>
-            {calendarView==="today" && (
-              <div style={{marginTop:14}}>
-                <div style={{background:"linear-gradient(135deg,#000,#2563eb)", color:"white", padding:16, borderRadius:12}}>
-                  <div style={{fontSize:12, opacity:0.8}}>Today Sales</div><div style={{fontSize:24, fontWeight:900}}>KES {salesToday.toLocaleString()}</div>
-                  <div style={{fontSize:12, opacity:0.8, marginTop:8}}>Today Profit</div><div style={{fontSize:20, fontWeight:900, color:"#facc15"}}>KES {profitToday.toLocaleString()}</div>
-                </div>
-              </div>
-            )}
-            {calendarView==="week" && (
-              <div style={{marginTop:14}}>
-                <div style={{background:"#f5f7fb", padding:12, borderRadius:10, marginBottom:10, display:"flex", justifyContent:"space-between"}}>
-                  <div><div style={{fontSize:11}}>Week Sales</div><div style={{fontWeight:900}}>KES {weekSales.toLocaleString()}</div></div>
-                  <div><div style={{fontSize:11}}>Week Profit</div><div style={{fontWeight:900, color:"#16a34a"}}>KES {weekProfit.toLocaleString()}</div></div>
-                </div>
-                {last7.map(d=>(
-                  <div key={d.key} style={{display:"flex", justifyContent:"space-between", padding:"8px 0", borderBottom:"1px solid #eee", fontSize:12}}>
-                    <span>{d.date.toLocaleDateString()} {d.key===todayKey&&"(Today)"}</span>
-                    <span>Sales KES {(d.data?.sales||0).toLocaleString()} | Profit KES {(d.data?.profit||0).toLocaleString()}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {calendarView==="month" && (
-              <div style={{marginTop:14}}>
-                <div style={{background:"#16a34a", color:"white", padding:12, borderRadius:10, display:"flex", justifyContent:"space-between"}}>
-                  <div><div style={{fontSize:11}}>Month Sales</div><div style={{fontWeight:900}}>KES {month.mSales.toLocaleString()}</div></div>
-                  <div><div style={{fontSize:11}}>Month Profit</div><div style={{fontWeight:900}}>KES {month.mProfit.toLocaleString()}</div></div>
-                </div>
-                {Object.entries(history).slice(-20).reverse().map(([k,v])=>(
-                  <div key={k} style={{display:"flex", justifyContent:"space-between", padding:"6px 0", borderBottom:"1px solid #eee", fontSize:12}}><span>{k}</span><span>KES {v.sales.toLocaleString()} / Profit {v.profit.toLocaleString()}</span></div>
-                ))}
-              </div>
-            )}
-            <button onClick={()=>setShowProfit(false)} style={{width:"100%", background:"black", color:"white", padding:12, borderRadius:10, fontWeight:800, border:"none", marginTop:14, cursor:"pointer"}}>CLOSE</button>
+      {isOwnerMode && (
+        <div style={{background:"linear-gradient(90deg,#facc15,#f59e0b)", color:"black", padding:"10px 14px", borderRadius:10, marginTop:8, display:"flex", justifyContent:"space-between", alignItems:"center", border:"2px solid #000"}}>
+          <div style={{fontWeight:900, fontSize:12}}>OWNER UNLOCKED - TRIAL till {expiry}</div>
+          <div style={{display:"flex", gap:8}}>
+            <button onClick={()=>setShowAddForm(true)} style={{background:"black", color:"#facc15", border:"none", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>ADD PRODUCT</button>
+            <button onClick={()=>setShowChangePin(true)} style={{background:"white", color:"black", border:"2px solid black", padding:"6px 14px", borderRadius:20, fontWeight:700, fontSize:12}}>Change PIN</button>
           </div>
         </div>
       )}
 
-      {showAddForm && (
-        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999, padding:20}}>
-          <div style={{background:"white", padding:20, borderRadius:12, maxWidth:400, width:"100%"}}>
-            <h3 style={{marginTop:0}}>Add New Product - {shopName}</h3>
-            <input value={newP.name} onChange={e=>setNewP({...newP, name:e.target.value})} placeholder="Name e.g. Cement - Rhino 50kg" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginBottom:8}}/>
-            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8}}>
-              <input value={newP.buy} onChange={e=>setNewP({...newP, buy:e.target.value})} placeholder="Buy price" type="number" style={{padding:10, borderRadius:8, border:"1px solid #ccc"}}/>
-              <input value={newP.sell} onChange={e=>setNewP({...newP, sell:e.target.value})} placeholder="Sell price" type="number" style={{padding:10, borderRadius:8, border:"1px solid #ccc"}}/>
-              <input value={newP.stock} onChange={e=>setNewP({...newP, stock:e.target.value})} placeholder="Stock qty" type="number" style={{padding:10, borderRadius:8, border:"1px solid #ccc"}}/>
-              <select value={newP.category} onChange={e=>setNewP({...newP, category:e.target.value})} style={{padding:10, borderRadius:8, border:"1px solid #ccc"}}>
-                {["Cement","Iron Sheets","Nails","Timber","Paint","Plumbing","Electrical","Fittings","Tools","Steel","Fencing","Aggregates"].map(c=><option key={c} value={c}>{c}</option>)}
-              </select>
+      {isOwnerMode && (
+        <div style={{background:"#1a1a1a", color:"white", padding:12, borderRadius:12, marginTop:8, border:"2px solid #000"}}>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
+            <div style={{fontWeight:900, fontSize:14, color:"#facc15"}}>PROFIT - {shopName.toUpperCase()} - TRIAL {daysLeftState}d left</div>
+            <div style={{display:"flex", gap:6}}>
+              {["Today","7 Days","Month"].map(v=>(
+                <button key={v} onClick={()=>setProfitView(v as any)} style={{background: profitView===v? "#facc15" : "#333", color: profitView===v? "black" : "white", border:"none", padding:"5px 10px", borderRadius:15, fontSize:11, fontWeight:700, cursor:"pointer"}}>{v}</button>
+              ))}
             </div>
-            <button onClick={handleAddNewProduct} style={{width:"100%", background:"#16a34a", color:"white", padding:12, borderRadius:8, fontWeight:900, border:"none", marginTop:12, cursor:"pointer"}}>ADD PRODUCT</button>
-            <button onClick={()=>setShowAddForm(false)} style={{width:"100%", background:"#f3f4f6", padding:10, borderRadius:8, border:"none", marginTop:6}}>Cancel</button>
           </div>
+          <div style={{background:"linear-gradient(90deg,#facc15,#fb923c)", color:"black", padding:"12px 14px", borderRadius:10, display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10}}>
+            <div>
+              <div style={{fontSize:10, fontWeight:700, opacity:0.8}}>{profitView==="Month"? `MONTH: ${monthKey}` : profitView==="Today"? "TODAY" : "7 DAYS"}</div>
+              <div style={{fontSize:18, fontWeight:900}}>KES {profitView==="Month"? monthSales.toLocaleString() : salesToday.toLocaleString()}</div>
+            </div>
+            <div>
+              <div style={{fontSize:10, fontWeight:700, opacity:0.8}}>TOTAL PROFIT</div>
+              <div style={{fontSize:18, fontWeight:900}}>KES {profitView==="Month"? monthProfit.toLocaleString() : profitToday.toLocaleString()}</div>
+            </div>
+            <div>
+              <div style={{fontSize:10, fontWeight:700, opacity:0.8}}>DAYS WORKED</div>
+              <div style={{fontSize:18, fontWeight:900}}>{daysWorked}</div>
+            </div>
+          </div>
+          <button onClick={()=>setIsOwnerMode(false)} style={{background:"#facc15", color:"black", border:"none", padding:"6px 16px", borderRadius:6, fontWeight:800, fontSize:12, marginTop:10, cursor:"pointer"}}>Lock</button>
         </div>
       )}
 
-      {showChangePin && (
-        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999, padding:20}}>
-          <div style={{background:"white", padding:20, borderRadius:12, maxWidth:320, width:"100%"}}>
-            <h3>Change Owner PIN</h3>
-            <input value={changePinData.oldPin} onChange={e=>setChangePinData({...changePinData, oldPin:e.target.value})} placeholder="Old PIN" type="password" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginBottom:8}}/>
-            <input value={changePinData.newPin} onChange={e=>setChangePinData({...changePinData, newPin:e.target.value})} placeholder="New PIN (4 digits)" type="password" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginBottom:8}}/>
-            <input value={changePinData.confirmPin} onChange={e=>setChangePinData({...changePinData, confirmPin:e.target.value})} placeholder="Confirm New PIN" type="password" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginBottom:8}}/>
-            <button onClick={handleChangePin} style={{width:"100%", background:"black", color:"white", padding:12, borderRadius:8, fontWeight:800, border:"none"}}>CHANGE PIN</button>
-            <button onClick={()=>setShowChangePin(false)} style={{width:"100%", background:"#f3f4f6", padding:10, borderRadius:8, border:"none", marginTop:6}}>Cancel</button>
-          </div>
-        </div>
-      )}
+      <div style={{display:"flex", gap:6, marginTop:10, flexWrap:"wrap"}}>
+        {["All",...Array.from(new Set(items.map(i=>i.category)))].map(cat=>(
+          <button key={cat} onClick={()=>setCategory(cat)} style={{background: category===cat?"black":"white", color: category===cat?"white":"black", border:"1px solid #ddd", padding:"5px 12px", borderRadius:20, fontSize:11, fontWeight:700, cursor:"pointer"}}>{cat}</button>
+        ))}
+      </div>
 
-      {receipt && (
-        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999, padding:20}}>
-          <div style={{background:"white", padding:20, borderRadius:12, maxWidth:380, width:"100%", color:"black", maxHeight:"95vh", overflowY:"auto"}}>
-            <div style={{textAlign:"center", borderBottom:"2px solid black", paddingBottom:8}}>
-              <h2 style={{margin:0, fontSize:16, fontWeight:900}}>{receipt.shopName.toUpperCase()}</h2>
-              <p style={{margin:"2px 0", fontSize:10}}>Mumias - Bungoma Rd</p>
-              <p style={{margin:0, fontSize:11, fontWeight:800}}>KRA PIN: {receipt.kraPin}</p>
-              <h3 style={{margin:"6px 0 0 0", fontSize:12}}>DUKAPULSE RECEIPT</h3>
-              <p style={{margin:0, fontSize:9, fontWeight:700, color:"green"}}>KRA eTIMS COMPLIANT</p>
-            </div>
-            <div style={{fontSize:11, marginTop:8, lineHeight:1.6}}>
-              <div style={{display:"flex", justifyContent:"space-between"}}><span>ID:</span><span>{receipt.id}</span></div>
-              <div style={{display:"flex", justifyContent:"space-between", fontWeight:800}}><span>KRA CU No:</span><span>{receipt.kraNo}</span></div>
-              <div style={{display:"flex", justifyContent:"space-between"}}><span>Date:</span><span>{receipt.date}</span></div>
-              <div style={{display:"flex", justifyContent:"space-between"}}><span>Method:</span><span>{receipt.method}</span></div>
-              <div style={{display:"flex", justifyContent:"space-between"}}><span>Customer:</span><span>{receipt.customer}</span></div>
-              <div style={{display:"flex", justifyContent:"space-between"}}><span>Phone:</span><span>{receipt.phone}</span></div>
-              <div style={{display:"flex", justifyContent:"space-between"}}><span>M-Pesa Code:</span><span style={{fontWeight:700}}>{receipt.mpesaCode}</span></div>
-            </div>
-            <div style={{borderTop:"1px dashed #999", margin:"8px 0", paddingTop:8, fontSize:11}}>
-              {receipt.cart.map((c:any)=><div key={c.id} style={{display:"flex", justifyContent:"space-between", marginBottom:3}}><span>{c.name.slice(0,25)} x{c.qty}</span><span>KES {c.sell*c.qty}</span></div>)}
-            </div>
-            <div style={{borderTop:"1px solid black", borderBottom:"1px solid black", padding:"8px 0", fontSize:11}}>
-              <div style={{display:"flex", justifyContent:"space-between"}}><span>Taxable:</span><span>KES {receipt.vat.taxable}</span></div>
-              <div style={{display:"flex", justifyContent:"space-between"}}><span>VAT 16%:</span><span>KES {receipt.vat.vat}</span></div>
-              <div style={{display:"flex", justifyContent:"space-between", fontWeight:900, fontSize:14, marginTop:4}}><span>TOTAL</span><span>KES {receipt.total.toLocaleString()}</span></div>
-            </div>
-            <div style={{textAlign:"center", marginTop:12}}>
-              <div style={{background:"white", padding:10, display:"inline-block", border:"2px solid black", borderRadius:8}}>
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(receipt.qrValue)}`}
-                  alt="KRA QR"
-                  style={{width:160, height:160, display:"block"}}
-                />
-              </div>
-              <div style={{fontSize:7, marginTop:6, wordBreak:"break-all", background:"#f3f4f6", padding:6, borderRadius:4, textAlign:"left"}}>{receipt.qrValue}</div>
-              <div style={{fontSize:9, fontWeight:900, color:"#16a34a", marginTop:6}}>✓ SCAN TO VERIFY ON KRA eTIMS</div>
-            </div>
-            <button onClick={closeReceipt} style={{width:"100%", background:"black", color:"white", padding:12, borderRadius:8, fontWeight:800, border:"none", marginTop:12, cursor:"pointer"}}>DONE - NEW SALE</button>
-          </div>
-        </div>
-      )}
-
-      {ownerPinPrompt && (
-        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9998, padding:20}}>
-          <div style={{background:"white", padding:20, borderRadius:12, maxWidth:300, width:"100%"}}>
-            <h3>Enter Owner PIN (default 1234)</h3>
-            <input value={ownerPinInput} onChange={e=>setOwnerPinInput(e.target.value)} type="password" placeholder="PIN 1234" style={{width:"100%", padding:10, borderRadius:8, border:"2px solid black"}}/>
-            <button onClick={confirmOwnerPin} style={{width:"100%", background:"black", color:"white", padding:10, borderRadius:8, marginTop:8, cursor:"pointer"}}>ENTER</button>
-            <button onClick={()=>setOwnerPinPrompt(false)} style={{width:"100%", background:"#f3f4f6", padding:8, borderRadius:8, marginTop:6, border:"none"}}>Cancel</button>
-          </div>
-        </div>
-      )}
-
-      <div style={{display:"grid", gridTemplateColumns:"2.2fr 1fr", gap:12}}>
+      <div style={{display:"grid", gridTemplateColumns:"2.2fr 0.9fr", gap:12, marginTop:12}}>
         <div style={{background:"white", borderRadius:12, padding:10}}>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder={`Search ${items.length} items...`} style={{width:"100%", padding:12, borderRadius:8, border:"2px solid #e5e7eb", marginBottom:10}}/>
-          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, maxHeight:"75vh", overflowY:"auto"}}>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder={`Search ${items.length} items...`} style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ddd", marginBottom:10}}/>
+          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, maxHeight:"70vh", overflowY:"auto"}}>
             {filtered.map(item=>(
-              <div key={item.id} style={{display:"flex", flexDirection:"column", padding:10, border: item.stock < 10? "2px solid red" : "1px solid #eee", borderRadius:10, background: item.stock < 10? "#fef2f2" : "white"}}>
-                <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
-                  <div style={{flex:1}}>
-                    <div style={{fontWeight:700, fontSize:12}}>{item.name} {item.stock < 10 && <span style={{color:"red"}}>LOW!</span>}</div>
-                    <div style={{fontSize:10, color: item.stock < 10? "red" : "#666"}}>{item.category} • Stock {item.stock} • Buy {item.buy} • Sell {item.sell}</div>
+              <div key={item.id} style={{padding:8, border:"1px solid #eee", borderRadius:8, background:"white"}}>
+                <div style={{fontWeight:700, fontSize:11}}>{item.name}</div>
+                <div style={{fontSize:9, color:"#666"}}>Cement - Stock {item.stock} - KES {item.buy} - {item.sell}</div>
+                {isOwnerMode? (
+                  <div style={{display:"flex", gap:4, marginTop:6}}>
+                    <input value={restockInputs[item.id]||""} onChange={e=>setRestockInputs({...restockInputs, [item.id]: e.target.value})} placeholder="+qty" style={{width:60, padding:4, borderRadius:4, border:"1px solid #ccc", fontSize:11}}/>
+                    <button onClick={()=>handleRestock(item.id)} style={{background:"#10b981", color:"white", border:"none", padding:"4px 10px", borderRadius:4, fontSize:10, fontWeight:700, cursor:"pointer"}}>RESTOCK</button>
                   </div>
-                  {!isOwnerMode && <button onClick={()=>addToCart(item)} style={{background:"#facc15", border:"none", padding:"6px 10px", borderRadius:8, fontWeight:800, fontSize:11, cursor:"pointer"}}>+</button>}
-                </div>
-                {isOwnerMode && (
-                  <div style={{display:"flex", gap:6, marginTop:8}}>
-                    <input value={restockInputs[item.id]||""} onChange={e=>setRestockInputs({...restockInputs, [item.id]: e.target.value})} placeholder="Add qty" type="number" style={{flex:1, padding:6, borderRadius:6, border:"1px solid #ccc", fontSize:12}}/>
-                    <button onClick={()=>handleRestock(item.id)} style={{background:"#16a34a", color:"white", border:"none", padding:"6px 10px", borderRadius:6, fontWeight:700, fontSize:11, cursor:"pointer"}}>RESTOCK</button>
-                  </div>
+                ) : (
+                  <button onClick={()=>addToCart(item)} style={{background:"#facc15", border:"none", padding:"4px 10px", borderRadius:4, fontWeight:800, fontSize:10, marginTop:6, cursor:"pointer"}}>ADD</button>
                 )}
               </div>
             ))}
           </div>
         </div>
+
         <div style={{background:"white", borderRadius:12, padding:12, height:"fit-content", position:"sticky", top:10}}>
-          <h3 style={{marginTop:0}}>Cart - {shopName} {isOwnerMode && "(Owner viewing)"}</h3>
-          {cart.map(c=>(<div key={c.id} style={{borderBottom:"1px solid #eee", padding:"6px 0"}}><div style={{display:"flex", justifyContent:"space-between", fontSize:12}}><span>{c.name.slice(0,20)} x{c.qty}</span><button onClick={()=>setCart(prev=>prev.filter(p=>p.id!==c.id))} style={{background:"#fee", border:"none", borderRadius:4, fontSize:10}}>X</button></div></div>))}
-          {!isOwnerMode && (
-            <>
-              <h2 style={{margin:"10px 0 4px 0"}}>Total: KES {totalSell.toLocaleString()}</h2>
-              <input value={customerName} onChange={e=>setCustomerName(e.target.value)} placeholder="Customer Name (optional)" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginBottom:6}}/>
-              <input value={mpesaPhone} onChange={e=>setMpesaPhone(e.target.value)} placeholder="Customer M-Pesa 07xx (empty=CASH)" style={{width:"100%", padding:11, borderRadius:8, border:"2px solid black", margin:"8px 0"}}/>
-              <button disabled={loading} onClick={handleSale} style={{width:"100%", background: loading?"#9ca3af":"#000", color:"white", border:"none", padding:14, borderRadius:10, fontWeight:900, cursor:"pointer"}}>{loading? status : "LIPA NA M-PESA / CASH"}</button>
-              <button onClick={()=>setCart([])} style={{width:"100%", marginTop:6, background:"#f3f4f6", border:"none", padding:9, borderRadius:8, cursor:"pointer"}}>Clear Cart</button>
-            </>
-          )}
-          {isOwnerMode && <div style={{background:"#facc15", padding:10, borderRadius:8, fontSize:11, fontWeight:700, marginTop:10}}>OWNER MODE: You are restocking. Click Selling Mode to sell again. Profit hidden from workers.</div>}
-          <div style={{fontSize:10, color:"#16a34a", marginTop:8, textAlign:"center", fontWeight:700}}>✓ REAL QR - KRA READY - VERCEL BUILD FIXED</div>
+          <h3 style={{margin:"0 0 10px 0", fontSize:13}}>Cart - {shopName.toUpperCase()}</h3>
+          {cart.map(c=>(
+            <div key={c.id} style={{borderBottom:"1px solid #eee", padding:"8px 0"}}>
+              <div style={{display:"flex", justifyContent:"space-between", fontSize:11}}>
+                <span>{c.name.slice(0,20)} x{c.qty}</span>
+                <button onClick={()=>setCart(prev=>prev.filter(p=>p.id!==c.id))} style={{background:"#fee", border:"none", borderRadius:4, fontSize:10}}>X</button>
+              </div>
+              <div style={{display:"flex", gap:4, marginTop:4, alignItems:"center"}}>
+                <span style={{fontSize:10}}>Price:</span>
+                <input value={c.customSell} onChange={e=>updateCartPrice(c.id, e.target.value)} style={{width:80, padding:3, borderRadius:4, border:"1px solid #000", fontSize:12, fontWeight:700}}/>
+                <span style={{fontSize:10}}>= {c.customSell * c.qty}</span>
+              </div>
+              <div style={{display:"flex", gap:4, marginTop:2}}>
+                <span style={{fontSize:10}}>Qty:</span>
+                <input value={c.qty} onChange={e=>updateCartQty(c.id, e.target.value)} type="number" style={{width:50, padding:2, borderRadius:4, border:"1px solid #ccc", fontSize:11}}/>
+              </div>
+            </div>
+          ))}
+          <div style={{marginTop:10}}>
+            <div style={{fontWeight:900, fontSize:16}}>Total: KES {totalSell.toLocaleString()}</div>
+            <div style={{fontSize:10, color:"#666"}}>Cart Profit KES {totalProfit.toLocaleString()}</div>
+          </div>
+          <input value={customerName} onChange={e=>setCustomerName(e.target.value)} placeholder="Customer Name" style={{width:"100%", padding:8, borderRadius:6, border:"1px solid #ddd", marginTop:8, fontSize:12}}/>
+          <input value={mpesaPhone} onChange={e=>setMpesaPhone(e.target.value)} placeholder="07xxxxxxxxx" style={{width:"100%", padding:10, borderRadius:8, border:"2px solid #000", marginTop:6, fontSize:12}}/>
+          <button onClick={handleSale} style={{width:"100%", background:"black", color:"white", border:"none", padding:12, borderRadius:8, fontWeight:900, marginTop:8, cursor:"pointer"}}>LIPA NA M-PESA / CASH</button>
         </div>
       </div>
+
+      {receipt && (
+        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999, padding:20}}>
+          <div style={{background:"white", padding:20, borderRadius:12, maxWidth:360, width:"100%"}}>
+            <h2 style={{margin:0, fontSize:14, textAlign:"center"}}>{receipt.shopName.toUpperCase()} - RECEIPT</h2>
+            <p style={{fontSize:10, textAlign:"center", margin:"4px 0"}}>KRA PIN: {receipt.kraPin} | {receipt.kraNo}</p>
+            <div style={{fontSize:11, marginTop:8}}>
+              {receipt.cart.map((c:any)=><div key={c.id} style={{display:"flex", justifyContent:"space-between"}}><span>{c.name.slice(0,20)} x{c.qty}</span><span>{c.customSell*c.qty}</span></div>)}
+            </div>
+            <div style={{borderTop:"2px solid black", marginTop:8, paddingTop:8, display:"flex", justifyContent:"space-between", fontWeight:900}}>
+              <span>TOTAL</span><span>KES {receipt.total}</span>
+            </div>
+            <div style={{textAlign:"center", marginTop:10}}>
+              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(receipt.qrValue)}`} alt="QR" style={{width:140, height:140}}/>
+            </div>
+            <button onClick={closeReceipt} style={{width:"100%", background:"black", color:"white", padding:10, borderRadius:8, marginTop:10, border:"none", fontWeight:800}}>DONE</button>
+          </div>
+        </div>
+      )}
+
+      {ownerPinPrompt && (
+        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999}}>
+          <div style={{background:"white", padding:20, borderRadius:12}}>
+            <h3>Enter PIN (1234)</h3>
+            <input value={ownerPinInput} onChange={e=>setOwnerPinInput(e.target.value)} type="password" style={{width:"100%", padding:10, borderRadius:8, border:"2px solid black"}}/>
+            <button onClick={confirmOwnerPin} style={{width:"100%", background:"black", color:"white", padding:10, borderRadius:8, marginTop:8}}>ENTER</button>
+          </div>
+        </div>
+      )}
+
+      {showAddForm && (
+        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999}}>
+          <div style={{background:"white", padding:20, borderRadius:12, maxWidth:400, width:"100%"}}>
+            <h3>Add Product</h3>
+            <input value={newP.name} onChange={e=>setNewP({...newP, name:e.target.value})} placeholder="Name" style={{width:"100%", padding:8, borderRadius:6, border:"1px solid #ccc", marginBottom:6}}/>
+            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:6}}>
+              <input value={newP.buy} onChange={e=>setNewP({...newP, buy:e.target.value})} placeholder="Buy" type="number" style={{padding:8, borderRadius:6, border:"1px solid #ccc"}}/>
+              <input value={newP.sell} onChange={e=>setNewP({...newP, sell:e.target.value})} placeholder="Sell" type="number" style={{padding:8, borderRadius:6, border:"1px solid #ccc"}}/>
+              <input value={newP.stock} onChange={e=>setNewP({...newP, stock:e.target.value})} placeholder="Stock" type="number" style={{padding:8, borderRadius:6, border:"1px solid #ccc"}}/>
+              <select value={newP.category} onChange={e=>setNewP({...newP, category:e.target.value})} style={{padding:8, borderRadius:6, border:"1px solid #ccc"}}>
+                {["Cement","Iron Sheets","Nails","Timber","Paint","Plumbing","Electrical","Fittings","Tools","Steel","Fencing","Aggregates"].map(c=><option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <button onClick={handleAddNewProduct} style={{width:"100%", background:"#16a34a", color:"white", padding:10, borderRadius:8, marginTop:10, border:"none", fontWeight:800}}>ADD</button>
+            <button onClick={()=>setShowAddForm(false)} style={{width:"100%", background:"#eee", padding:8, borderRadius:8, marginTop:6, border:"none"}}>Cancel</button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
