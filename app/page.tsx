@@ -1,6 +1,5 @@
 "use client";
 import { useState, useEffect } from "react";
-import { QRCodeCanvas } from "qrcode.react";
 
 type Item = { id: number; name: string; buy: number; sell: number; stock: number; category: string; };
 type CartItem = Item & { qty: number; customSell?: number };
@@ -349,7 +348,6 @@ export default function Page() {
         {isOwnerMode && <div style={{marginTop:10, display:"flex", gap:8}}><button onClick={()=>setShowAddForm(true)} style={{background:"#16a34a", color:"white", border:"none", padding:"8px 14px", borderRadius:8, fontWeight:800, fontSize:12, cursor:"pointer"}}>+ ADD NEW PRODUCT</button><button onClick={()=>setShowChangePin(true)} style={{background:"white", color:"black", border:"none", padding:"8px 14px", borderRadius:8, fontWeight:700, fontSize:12}}>Change PIN</button></div>}
       </div>
 
-      {/* PROFIT MODAL - FIXED */}
       {showProfit && (
         <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999, padding:20}}>
           <div style={{background:"white", padding:20, borderRadius:16, maxWidth:500, width:"100%", maxHeight:"90vh", overflowY:"auto"}}>
@@ -366,7 +364,6 @@ export default function Page() {
                   <div style={{fontSize:12, opacity:0.8}}>Today Sales</div><div style={{fontSize:24, fontWeight:900}}>KES {salesToday.toLocaleString()}</div>
                   <div style={{fontSize:12, opacity:0.8, marginTop:8}}>Today Profit</div><div style={{fontSize:20, fontWeight:900, color:"#facc15"}}>KES {profitToday.toLocaleString()}</div>
                 </div>
-                <div style={{marginTop:10, fontSize:11, color:"#666"}}>PIN: {ownerPin} (Owner only)</div>
               </div>
             )}
             {calendarView==="week" && (
@@ -399,7 +396,6 @@ export default function Page() {
         </div>
       )}
 
-      {/* ADD PRODUCT MODAL - FIXED */}
       {showAddForm && (
         <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999, padding:20}}>
           <div style={{background:"white", padding:20, borderRadius:12, maxWidth:400, width:"100%"}}>
@@ -419,7 +415,6 @@ export default function Page() {
         </div>
       )}
 
-      {/* CHANGE PIN MODAL - FIXED */}
       {showChangePin && (
         <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999, padding:20}}>
           <div style={{background:"white", padding:20, borderRadius:12, maxWidth:320, width:"100%"}}>
@@ -462,7 +457,11 @@ export default function Page() {
             </div>
             <div style={{textAlign:"center", marginTop:12}}>
               <div style={{background:"white", padding:10, display:"inline-block", border:"2px solid black", borderRadius:8}}>
-                <QRCodeCanvas value={receipt.qrValue} size={160} level="H" includeMargin={true} />
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(receipt.qrValue)}`}
+                  alt="KRA QR"
+                  style={{width:160, height:160, display:"block"}}
+                />
               </div>
               <div style={{fontSize:7, marginTop:6, wordBreak:"break-all", background:"#f3f4f6", padding:6, borderRadius:4, textAlign:"left"}}>{receipt.qrValue}</div>
               <div style={{fontSize:9, fontWeight:900, color:"#16a34a", marginTop:6}}>✓ SCAN TO VERIFY ON KRA eTIMS</div>
@@ -519,7 +518,7 @@ export default function Page() {
             </>
           )}
           {isOwnerMode && <div style={{background:"#facc15", padding:10, borderRadius:8, fontSize:11, fontWeight:700, marginTop:10}}>OWNER MODE: You are restocking. Click Selling Mode to sell again. Profit hidden from workers.</div>}
-          <div style={{fontSize:10, color:"#16a34a", marginTop:8, textAlign:"center", fontWeight:700}}>✓ REAL QR - KRA READY - OWNER MODE FIXED</div>
+          <div style={{fontSize:10, color:"#16a34a", marginTop:8, textAlign:"center", fontWeight:700}}>✓ REAL QR - KRA READY - VERCEL BUILD FIXED</div>
         </div>
       </div>
     </main>
