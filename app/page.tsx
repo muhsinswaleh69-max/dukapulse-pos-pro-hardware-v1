@@ -77,6 +77,16 @@ const INITIAL_ITEMS: Item[] = [
 
 function getTodayKey() { return new Date().toISOString().slice(0,10); }
 function getDateKey(d: Date) { return d.toISOString().slice(0,10); }
+// KRA HELPERS - INLINE TO AVOID IMPORT ERRORS
+function calcVAT(total: number){
+  const taxable = total / 1.16;
+  const vat = total - taxable;
+  return { taxable: taxable.toFixed(2), vat: vat.toFixed(2), total: total.toFixed(2) };
+}
+function genKRAInv(id: string){
+  const date = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  return `CUINV-${date}-${id.slice(-4)}`;
+}
 
 export default function Page() {
   const [shopId, setShopId] = useState<string | null>(null);
@@ -86,6 +96,7 @@ export default function Page() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [mpesaPhone, setMpesaPhone] = useState("");
+  const [customerName, setCustomerName] = useState("");
   const [receipt, setReceipt] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
@@ -144,7 +155,6 @@ export default function Page() {
 
     if(savedPin) setOwnerPin(savedPin); else setOwnerPin("1234");
 
-    // FIRST TIME ACCOUNT = START 7 DAY TRIAL
     if(!savedExpiry){
       const now = new Date();
       const trialEnd = new Date(); trialEnd.setDate(now.getDate()+7);
@@ -161,7 +171,6 @@ export default function Page() {
     }
 
     setExpiry(savedExpiry);
-    // CHECK IF EXPIRED
     if(new Date().toISOString().slice(0,10) > savedExpiry){ setIsBlocked(true); }
 
     const today = getTodayKey();
@@ -207,7 +216,7 @@ export default function Page() {
     saveOwnerPin(changePinData.newPin);
     setChangePinData({oldPin:"", newPin:"", confirmPin:""});
     setShowChangePin(false);
-    alert(`✅ PIN CHANGED! New PIN is ${changePinData.newPin}.`);
+    alert(`PIN CHANGED! New PIN is ${changePinData.newPin}.`);
   };
   const handleRestock = (id: number) => {
     const addStr = restockInputs[id] || "0";
@@ -216,7 +225,7 @@ export default function Page() {
     const newItems = items.map(it => it.id===id? {...it, stock: it.stock + addQty} : it);
     saveStock(newItems);
     setRestockInputs(prev => ({...prev, [id]: ""}));
-    alert(`✅ RESTOCKED! Added ${addQty}.`);
+    alert(`RESTOCKED! Added ${addQty}.`);
   };
   const handleAddNewProduct = () => {
     if(!newP.name ||!newP.buy ||!newP.sell ||!newP.stock) return alert("Fill all fields");
@@ -224,7 +233,7 @@ export default function Page() {
     saveStock([...items, newItem]);
     setNewP({name:"", buy:"", sell:"", stock:"", category:"Cement"});
     setShowAddForm(false);
-    alert(`✅ NEW PRODUCT ADDED! ${newItem.name}`);
+    alert(`NEW PRODUCT ADDED! ${newItem.name}`);
   };
 
   const filtered = items.filter(i => i.name.toLowerCase().includes(search.toLowerCase()) && (category==="All" || i.category===category));
@@ -261,7 +270,7 @@ export default function Page() {
     if(cart.length===0) return alert("Cart empty!");
     if(!mpesaPhone || mpesaPhone.length < 10){
       if(!confirm("Cash sale KES "+totalSell+"?")) return;
-      completeSale("CASH", "CASH", totalSell);
+      completeSale("CASH", "CASH", totalSell, "CASH");
       return;
     }
     setLoading(true);
@@ -271,23 +280,23 @@ export default function Page() {
       const data = await resp.json();
       if(!resp.ok) throw new Error(data.error || "STK failed");
       const checkoutId = data.CheckoutRequestID;
-      setStatus("✅ STK Sent! Tell customer to enter PIN...");
+      setStatus("STK Sent! Tell customer to enter PIN...");
       for(let i=0;i<20;i++){
         await new Promise(r=>setTimeout(r,3000));
-        setStatus(`⏳ Waiting M-Pesa... ${i+1}/20`);
+        setStatus(`Waiting M-Pesa... ${i+1}/20`);
         const poll = await fetch('/api/mpesa/callback');
         const tx = await poll.json();
         if(tx?.mpesaCode && tx?.checkoutId === checkoutId){
-          setPaidCode(tx.mpesaCode); setPaidAmount(tx.amount); setShowPaid(true); setLoading(false); setStatus("✅ PAYMENT SUCCESSFUL!");
-          setTimeout(()=>{ setShowPaid(false); completeSale("M-PESA", tx.mpesaCode, tx.amount); }, 4000);
+          setPaidCode(tx.mpesaCode); setPaidAmount(tx.amount); setShowPaid(true); setLoading(false); setStatus("PAYMENT SUCCESSFUL!");
+          setTimeout(()=>{ setShowPaid(false); completeSale("M-PESA", tx.mpesaCode, tx.amount, mpesaPhone); }, 4000);
           return;
         }
       }
-      setStatus("⚠️ Not confirmed yet. Check SMS."); completeSale("M-PESA", "PENDING - CHECK SMS", totalSell); setLoading(false);
+      setStatus("Not confirmed yet. Check SMS."); completeSale("M-PESA", "PENDING - CHECK SMS", totalSell, mpesaPhone); setLoading(false);
     }catch(e:any){ alert(e.message); setLoading(false); setStatus("Failed"); }
   };
 
-  const completeSale = (method: string, mpesaCode: string, amount: number) => {
+  const completeSale = (method: string, mpesaCode: string, amount: number, customerPhone: string) => {
     if(!shopId) return;
     let newItems=[...items];
     cart.forEach(c=>{ newItems=newItems.map(it=> it.id===c.id? {...it, stock: it.stock - c.qty} : it); });
@@ -301,10 +310,27 @@ export default function Page() {
     const profitKey = `dukapulse_${shopId}_profit_today_v10`;
     setSalesToday(s=>{const ns=s+totalSell; localStorage.setItem(salesKey, String(ns)); return ns;});
     setProfitToday(p=>{const np=p+totalProfit; localStorage.setItem(profitKey, String(np)); return np;});
-    const rec={id:"RCPT-"+Date.now().toString().slice(-6), date:new Date().toLocaleString(), cart:cart.map(c=>({...c, sell:getSellPrice(c)})), total:amount, phone:mpesaPhone||"CASH", method, mpesaCode, shopId, shopName};
-    setReceipt(rec); setLoading(false); setStatus("✅ Paid!");
+    const id = "RCPT-"+Date.now().toString().slice(-6);
+    const kraNo = genKRAInv(id);
+    const vat = calcVAT(amount);
+    const rec={
+      id,
+      kraNo,
+      vat,
+      date:new Date().toLocaleString(),
+      cart:cart.map(c=>({...c, sell:getSellPrice(c)})),
+      total:amount,
+      phone: customerPhone || "Walk-in", // FIXED - NOT CASH ANYMORE
+      customer: customerName || "Walk-in Customer",
+      method,
+      mpesaCode,
+      shopId,
+      shopName,
+      kraPin: "P051234567Z"
+    };
+    setReceipt(rec); setLoading(false); setStatus("Paid!");
   };
-  const closeReceipt=()=>{setReceipt(null); setCart([]); setMpesaPhone(""); setStatus("");};
+  const closeReceipt=()=>{setReceipt(null); setCart([]); setMpesaPhone(""); setCustomerName(""); setStatus("");};
   const last7 = getLast7Days();
   const month = getThisMonth();
   const weekSales = last7.reduce((s,d)=> s + (d.data?.sales||0), 0);
@@ -339,23 +365,18 @@ export default function Page() {
     return (
       <main style={{fontFamily:"system-ui", minHeight:"100vh", background:"#000", display:"flex", alignItems:"center", justifyContent:"center", padding:20}}>
         <div style={{background:"white", padding:22, borderRadius:16, maxWidth:440, width:"100%", textAlign:"center", border:"4px solid #7a1e2d"}}>
-          <h1 style={{color:"#7a1e2d", fontSize:36, margin:0}}>🔒 INACTIVE</h1>
+          <h1 style={{color:"#7a1e2d", fontSize:36, margin:0}}>INACTIVE</h1>
           <h2 style={{margin:"8px 0", fontSize:15}}>{shopName.toUpperCase()}</h2>
           <div style={{background: isFirstPayment? "#fef2f2" : "#fef9c3", padding:8, borderRadius:8, marginTop:6}}>
             <p style={{fontSize:12, margin:0, fontWeight:800, color: isFirstPayment? "#7a1e2d" : "#92400e"}}>
               {isFirstPayment? `7 DAY TRIAL ENDED ON ${expiry}` : `SUBSCRIPTION EXPIRED ON ${expiry}`}
             </p>
-            <p style={{fontSize:10, margin:"4px 0 0 0", color:"#666"}}>
-              Trial started: {trialStart} • Expired: {expiry}
-            </p>
           </div>
-
           <div style={{background:"#7a1e2d", borderRadius:12, padding:14, marginTop:12, textAlign:"left", color:"white"}}>
             <div style={{display:"flex", justifyContent:"space-between"}}>
               <span style={{fontWeight:900, fontSize:14, color:"#ff9aa2"}}>LOOP BIZ</span>
               <span style={{fontSize:9, background:"white", color:"#7a1e2d", padding:"2px 8px", borderRadius:20, fontWeight:800}}>PAY WITH LOOP</span>
             </div>
-
             {isFirstPayment? (
               <div style={{marginTop:8}}>
                 <div style={{fontSize:11, background:"#ff9aa2", color:"#7a1e2d", padding:6, borderRadius:6, fontWeight:900, textAlign:"center"}}>FIRST PAYMENT - NEW ACCOUNT</div>
@@ -371,7 +392,6 @@ export default function Page() {
                 <div style={{fontSize:28, fontWeight:900, textAlign:"center", marginTop:8, color:"#ff9aa2"}}>KES 1,500</div>
               </div>
             )}
-
             <div style={{fontSize:10, marginTop:8}}>M-PESA & AIRTEL MONEY PAYBILL</div>
             <div style={{fontSize:30, fontWeight:900, color:"#ff6b7a"}}>714888</div>
             <div style={{fontSize:11, fontWeight:700}}>ACCOUNT NUMBER</div>
@@ -390,16 +410,12 @@ export default function Page() {
               localStorage.setItem(`dukapulse_${shopId}_first_paid_v10`, "true");
               localStorage.setItem(`dukapulse_${shopId}_last_payment_v10`, JSON.stringify({code: subCodeInput, date: new Date().toISOString(), amount: payAmount, isFirst: isFirstPayment, paybill:"714888", acc:"467108"}));
               setIsBlocked(false); setExpiry(newExpiry); setIsFirstPayment(false); setSubCodeInput("");
-              alert(`✅ ${isFirstPayment? "INSTALLATION KES 3500 + MONTHLY KES 1500" : "MONTHLY KES 1500"} PAID! Code ${subCodeInput} - Unlocked till ${newExpiry}`);
+              alert(`PAID! Code ${subCodeInput} - Unlocked till ${newExpiry}`);
             }} style={{width:"100%", background:"#16a34a", color:"white", padding:12, borderRadius:8, fontWeight:900, border:"none", marginTop:8, cursor:"pointer"}}>
               VERIFY KES {payAmount} & UNLOCK 30 DAYS
             </button>
           </div>
-
-          <div style={{marginTop:10, fontSize:10, color:"#666"}}>
-            {isFirstPayment? "First payment includes installation" : "Monthly subscription renewal"}<br/>Paybill 714888 • Account 467108
-          </div>
-
+          <div style={{marginTop:10, fontSize:10, color:"#666"}}>Paybill 714888 • Account 467108</div>
           <div style={{marginTop:10, borderTop:"1px solid #eee", paddingTop:8, display:"flex", gap:6}}>
             <input type="password" value={adminCode} onChange={e=>setAdminCode(e.target.value)} placeholder="Admin override" style={{flex:1, padding:8, borderRadius:8, border:"1px solid #ccc", fontSize:11}}/>
             <button onClick={()=>{
@@ -408,7 +424,7 @@ export default function Page() {
                 const newExpiry = newDate.toISOString().slice(0,10);
                 localStorage.setItem(`dukapulse_${shopId}_expiry_v10`, newExpiry);
                 if(isFirstPayment) localStorage.setItem(`dukapulse_${shopId}_first_paid_v10`, "true");
-                setIsBlocked(false); setExpiry(newExpiry); setIsFirstPayment(false); setAdminCode(""); alert(`✅ MANUAL UNLOCK ${newExpiry}`);
+                setIsBlocked(false); setExpiry(newExpiry); setIsFirstPayment(false); setAdminCode(""); alert(`MANUAL UNLOCK ${newExpiry}`);
               } else { alert("Wrong admin!"); }
             }} style={{background:"#eee", border:"none", padding:"8px 12px", borderRadius:8, fontSize:11, fontWeight:700}}>Unlock</button>
           </div>
@@ -420,7 +436,7 @@ export default function Page() {
 
   return (
     <main style={{fontFamily:"system-ui", padding:12, maxWidth:1300, margin:"0 auto", background:"#f5f7fb", minHeight:"100vh"}}>
-      <div className="no-print" style={{background:"linear-gradient(135deg,#000,#2563eb)", color:"white", padding:16, borderRadius:14, marginBottom:12}}>
+      <div style={{background:"linear-gradient(135deg,#000,#2563eb)", color:"white", padding:16, borderRadius:14, marginBottom:12}}>
         <div style={{display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:10}}>
           <div>
             <h1 style={{margin:0, fontSize:18, fontWeight:900}}>DUKAPULSE - {shopName.toUpperCase()}</h1>
@@ -432,30 +448,20 @@ export default function Page() {
             </p>
           </div>
           <div style={{display:"flex", gap:8}}>
-            <button onClick={tryEnterOwnerMode} style={{background: isOwnerMode? "#facc15" : "white", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>{isOwnerMode? "🛒 Selling Mode" : "🔒 Owner Restock"}</button>
+            <button onClick={tryEnterOwnerMode} style={{background: isOwnerMode? "#facc15" : "white", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>{isOwnerMode? "Selling Mode" : "Owner Restock"}</button>
             <button onClick={handleLogout} style={{background:"white", color:"black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, border:"none", cursor:"pointer"}}>Logout</button>
-            <button onClick={()=>setShowProfit(true)} style={{background:"#000", color:"#facc15", border:"1px solid #facc15", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>🔒 MY PROFIT</button>
+            <button onClick={()=>setShowProfit(true)} style={{background:"#000", color:"#facc15", border:"1px solid #facc15", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>MY PROFIT</button>
           </div>
         </div>
-        {isFirstPayment && daysLeft() <=3 && daysLeft() >0 && (
-          <div style={{marginTop:10, background:"#fef2f2", color:"#7a1e2d", padding:"8px 12px", borderRadius:8, fontSize:12, fontWeight:800, border:"1px solid #fecaca"}}>
-            ⚠️ TRIAL ENDING IN {daysLeft()} DAYS! Pay KES 5000 (3500 Installation + 1500 Monthly) via Paybill 714888 Acc 467108 to avoid lock!
-          </div>
-        )}
-        {!isFirstPayment && daysLeft() <=5 && daysLeft() >0 && (
-          <div style={{marginTop:10, background:"#fef9c3", color:"#92400e", padding:"8px 12px", borderRadius:8, fontSize:12, fontWeight:800}}>
-            ⚠️ RENEWAL IN {daysLeft()} DAYS! Pay KES 1500 via Paybill 714888 Acc 467108
-          </div>
-        )}
         <div style={{display:"flex", gap:6, marginTop:10, flexWrap:"wrap"}}>{["All",...Array.from(new Set(items.map(i=>i.category)))].map(cat=>(<button key={cat} onClick={()=>setCategory(cat)} style={{background: category===cat?"white":"rgba(255,255,255,0.2)", color: category===cat?"black":"white", border:"none", padding:"6px 12px", borderRadius:20, fontSize:11, fontWeight:700, cursor:"pointer"}}>{cat}</button>))}</div>
-        {isOwnerMode && <div style={{marginTop:10, background:"#facc15", color:"black", padding:"8px 12px", borderRadius:8, fontSize:12, fontWeight:700, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8}}><span>🔓 OWNER UNLOCKED - {isFirstPayment?`TRIAL till ${expiry}`:`Exp ${expiry}`}</span><div style={{display:"flex", gap:6}}><button onClick={()=>setShowAddForm(true)} style={{background:"black", color:"#facc15", border:"none", padding:"6px 14px", borderRadius:20, fontWeight:900, fontSize:12, cursor:"pointer"}}>➕ ADD PRODUCT</button><button onClick={()=>setShowChangePin(true)} style={{background:"white", color:"black", border:"1px solid black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>🔑 Change PIN</button></div></div>}
+        {isOwnerMode && <div style={{marginTop:10, background:"#facc15", color:"black", padding:"8px 12px", borderRadius:8, fontSize:12, fontWeight:700, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8}}><span>OWNER UNLOCKED - {isFirstPayment?`TRIAL till ${expiry}`:`Exp ${expiry}`}</span><div style={{display:"flex", gap:6}}><button onClick={()=>setShowAddForm(true)} style={{background:"black", color:"#facc15", border:"none", padding:"6px 14px", borderRadius:20, fontWeight:900, fontSize:12, cursor:"pointer"}}>ADD PRODUCT</button><button onClick={()=>setShowChangePin(true)} style={{background:"white", color:"black", border:"1px solid black", padding:"6px 14px", borderRadius:20, fontWeight:800, fontSize:12, cursor:"pointer"}}>Change PIN</button></div></div>}
       </div>
 
       {ownerPinPrompt && (
-        <div className="no-print" style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9998, padding:20}}>
+        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9998, padding:20}}>
           <div style={{background:"white", padding:20, borderRadius:12, maxWidth:340, width:"100%"}}>
-            <h3 style={{margin:"0 0 10px 0"}}>🔒 Owner PIN Required</h3>
-            <input type="password" value={ownerPinInput} onChange={e=>setOwnerPinInput(e.target.value)} placeholder="Enter PIN ••••" style={{width:"100%", padding:12, borderRadius:8, border:"2px solid black", marginTop:10}}/>
+            <h3 style={{margin:"0 0 10px 0"}}>Owner PIN Required</h3>
+            <input type="password" value={ownerPinInput} onChange={e=>setOwnerPinInput(e.target.value)} placeholder="Enter PIN" style={{width:"100%", padding:12, borderRadius:8, border:"2px solid black", marginTop:10}}/>
             <div style={{display:"flex", gap:8, marginTop:12}}>
               <button onClick={confirmOwnerPin} style={{flex:1, background:"black", color:"white", padding:12, borderRadius:8, fontWeight:800, border:"none", cursor:"pointer"}}>UNLOCK</button>
               <button onClick={()=>{setOwnerPinPrompt(false); setOwnerPinInput("");}} style={{padding:12, borderRadius:8, border:"1px solid #ccc", background:"white", cursor:"pointer"}}>Cancel</button>
@@ -465,9 +471,9 @@ export default function Page() {
       )}
 
       {showChangePin && (
-        <div className="no-print" style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999, padding:20}}>
+        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999, padding:20}}>
           <div style={{background:"white", padding:20, borderRadius:12, maxWidth:360, width:"100%"}}>
-            <h3 style={{margin:"0 0 10px 0"}}>🔑 Change Owner PIN</h3>
+            <h3 style={{margin:"0 0 10px 0"}}>Change Owner PIN</h3>
             <input type="password" value={changePinData.oldPin} onChange={e=>setChangePinData({...changePinData, oldPin:e.target.value})} placeholder="Old PIN" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginTop:10}}/>
             <input type="password" value={changePinData.newPin} onChange={e=>setChangePinData({...changePinData, newPin:e.target.value})} placeholder="New PIN (min 4 digits)" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginTop:8}}/>
             <input type="password" value={changePinData.confirmPin} onChange={e=>setChangePinData({...changePinData, confirmPin:e.target.value})} placeholder="Confirm New PIN" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginTop:8}}/>
@@ -480,8 +486,8 @@ export default function Page() {
       )}
 
       {isOwnerMode && showAddForm && (
-        <div className="no-print" style={{background:"white", padding:16, borderRadius:12, marginBottom:12, border:"2px solid black"}}>
-          <h3 style={{margin:"0 0 10px 0"}}>➕ Add New Product</h3>
+        <div style={{background:"white", padding:16, borderRadius:12, marginBottom:12, border:"2px solid black"}}>
+          <h3 style={{margin:"0 0 10px 0"}}>Add New Product</h3>
           <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8}}>
             <input value={newP.name} onChange={e=>setNewP({...newP, name:e.target.value})} placeholder="Product Name" style={{padding:10, borderRadius:8, border:"1px solid #ccc", gridColumn:"1 / -1"}}/>
             <input type="number" value={newP.buy} onChange={e=>setNewP({...newP, buy:e.target.value})} placeholder="Buy Price" style={{padding:10, borderRadius:8, border:"1px solid #ccc"}}/>
@@ -499,13 +505,13 @@ export default function Page() {
       )}
 
       {showProfit && (
-        <div className="no-print" style={{background:"#000", color:"#facc15", padding:16, borderRadius:12, marginBottom:12, border:"2px solid #facc15"}}>
+        <div style={{background:"#000", color:"#facc15", padding:16, borderRadius:12, marginBottom:12, border:"2px solid #facc15"}}>
           {pin!==ownerPin? (
-            <div><h3>🔒 Owner PIN</h3><div style={{display:"flex", gap:8}}><input type="password" value={pin} onChange={e=>setPin(e.target.value)} placeholder="Enter PIN ••••" style={{padding:10, borderRadius:8, flex:1}}/><button onClick={()=>{if(pin!==ownerPin) alert("Wrong PIN!");}} style={{padding:"10px 15px", borderRadius:8, background:"#facc15", fontWeight:800}}>Unlock</button><button onClick={()=>setShowProfit(false)} style={{padding:"10px 15px", borderRadius:8}}>Close</button></div></div>
+            <div><h3>Owner PIN</h3><div style={{display:"flex", gap:8}}><input type="password" value={pin} onChange={e=>setPin(e.target.value)} placeholder="Enter PIN" style={{padding:10, borderRadius:8, flex:1}}/><button onClick={()=>{if(pin!==ownerPin) alert("Wrong PIN!");}} style={{padding:"10px 15px", borderRadius:8, background:"#facc15", fontWeight:800}}>Unlock</button><button onClick={()=>setShowProfit(false)} style={{padding:"10px 15px", borderRadius:8}}>Close</button></div></div>
           ) : (
             <div>
               <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
-                <h3 style={{margin:0}}>💰 PROFIT - {shopName} - {isFirstPayment?`TRIAL ${daysLeft()}d left`:`Paid till ${expiry}`}</h3>
+                <h3 style={{margin:0}}>PROFIT - {shopName}</h3>
                 <div style={{display:"flex", gap:6}}>
                   <button onClick={()=>setCalendarView("today")} style={{background:calendarView==="today"?"#facc15":"#222", color:calendarView==="today"?"#000":"#fff", border:"none", padding:"6px 10px", borderRadius:6, fontSize:11, fontWeight:700}}>Today</button>
                   <button onClick={()=>setCalendarView("week")} style={{background:calendarView==="week"?"#facc15":"#222", color:calendarView==="week"?"#000":"#fff", border:"none", padding:"6px 10px", borderRadius:6, fontSize:11, fontWeight:700}}>7 Days</button>
@@ -545,7 +551,7 @@ export default function Page() {
                   </div>
                 </div>
               )}
-              <button onClick={()=>{setShowProfit(false); setPin("");}} style={{background:"#facc15", color:"black", padding:"8px 16px", borderRadius:8, fontWeight:800, border:"none", marginTop:12}}>Lock 🔒</button>
+              <button onClick={()=>{setShowProfit(false); setPin("");}} style={{background:"#facc15", color:"black", padding:"8px 16px", borderRadius:8, fontWeight:800, border:"none", marginTop:12}}>Lock</button>
             </div>
           )}
         </div>
@@ -564,35 +570,62 @@ export default function Page() {
         </div>
       )}
 
+      {/* KRA COMPLIANT RECEIPT - FIXED */}
       {receipt && (
         <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999, padding:20}}>
-          <div style={{background:"white", padding:20, borderRadius:12, maxWidth:360, width:"100%"}}>
-            <h2 style={{marginTop:0, textAlign:"center"}}>DUKAPULSE RECEIPT</h2>
-            <p style={{fontSize:11, textAlign:"center"}}>{receipt.shopName}</p>
-            <div style={{borderTop:"1px dashed #ccc", margin:"10px 0", paddingTop:10, fontSize:12}}>
-              <div>ID: {receipt.id}</div>
-              <div>Date: {receipt.date}</div>
-              <div>Method: {receipt.method}</div>
-              <div>CODE: {receipt.mpesaCode}</div>
-              <div>Phone: {receipt.phone}</div>
+          <div style={{background:"white", padding:20, borderRadius:12, maxWidth:380, width:"100%", color:"black"}}>
+            <div style={{textAlign:"center", borderBottom:"2px solid black", paddingBottom:8}}>
+              <h2 style={{margin:0, fontSize:16, fontWeight:900}}>{receipt.shopName.toUpperCase()}</h2>
+              <p style={{margin:"2px 0", fontSize:10}}>Mumias - Bungoma Rd | 07xx xxx xxx</p>
+              <p style={{margin:0, fontSize:11, fontWeight:800}}>KRA PIN: {receipt.kraPin}</p>
+              <h3 style={{margin:"6px 0 0 0", fontSize:12}}>DUKAPULSE RECEIPT</h3>
+              <p style={{margin:0, fontSize:9, fontWeight:700, color:"green"}}>KRA eTIMS COMPLIANT</p>
             </div>
-            <div style={{borderTop:"1px dashed #ccc", paddingTop:8}}>
-              {receipt.cart.map((c:any)=><div key={c.id} style={{display:"flex", justifyContent:"space-between", fontSize:12, marginBottom:4}}><span>{c.name.slice(0,20)} x{c.qty}</span><span>KES {c.sell*c.qty}</span></div>)}
+
+            <div style={{fontSize:11, marginTop:8, lineHeight:1.6}}>
+              <div style={{display:"flex", justifyContent:"space-between"}}><span>ID:</span><span>{receipt.id}</span></div>
+              <div style={{display:"flex", justifyContent:"space-between", fontWeight:800}}><span>KRA CU No:</span><span>{receipt.kraNo}</span></div>
+              <div style={{display:"flex", justifyContent:"space-between"}}><span>Date:</span><span>{receipt.date}</span></div>
+              <div style={{display:"flex", justifyContent:"space-between"}}><span>Method:</span><span>{receipt.method}</span></div>
+              <div style={{display:"flex", justifyContent:"space-between"}}><span>Customer:</span><span>{receipt.customer}</span></div>
+              <div style={{display:"flex", justifyContent:"space-between"}}><span>Phone:</span><span>{receipt.phone}</span></div>
+              <div style={{display:"flex", justifyContent:"space-between"}}><span>M-Pesa Code:</span><span style={{fontWeight:700}}>{receipt.mpesaCode}</span></div>
             </div>
-            <div style={{borderTop:"2px solid black", marginTop:8, paddingTop:8, display:"flex", justifyContent:"space-between", fontWeight:900, fontSize:16}}>
-              <span>TOTAL</span><span>KES {receipt.total.toLocaleString()}</span>
+
+            <div style={{borderTop:"1px dashed #999", margin:"8px 0", paddingTop:8, fontSize:11}}>
+              {receipt.cart.map((c:any)=><div key={c.id} style={{display:"flex", justifyContent:"space-between", marginBottom:3}}><span>{c.name.slice(0,25)} x{c.qty}</span><span>KES {c.sell*c.qty}</span></div>)}
             </div>
+
+            <div style={{borderTop:"1px solid black", borderBottom:"1px solid black", padding:"8px 0", fontSize:11}}>
+              <div style={{display:"flex", justifyContent:"space-between"}}><span>Taxable Amount:</span><span>KES {receipt.vat.taxable}</span></div>
+              <div style={{display:"flex", justifyContent:"space-between"}}><span>VAT 16%:</span><span>KES {receipt.vat.vat}</span></div>
+              <div style={{display:"flex", justifyContent:"space-between", fontWeight:900, fontSize:14, marginTop:4}}><span>TOTAL</span><span>KES {receipt.total.toLocaleString()}</span></div>
+            </div>
+
+            <div style={{textAlign:"center", marginTop:10}}>
+              <div style={{width:100, height:100, border:"2px solid black", margin:"0 auto", display:"flex", alignItems:"center", justifyContent:"center", fontSize:8, padding:4, fontWeight:800}}>
+                KRA eTIMS<br/>QR CODE<br/>{receipt.kraNo}
+              </div>
+              <div style={{fontSize:7, marginTop:4, wordBreak:"break-all"}}>https://etims.kra.go.ke/verify/{receipt.kraNo}</div>
+              <div style={{fontSize:8, fontWeight:800, marginTop:2}}>SCAN TO VERIFY ON KRA PORTAL</div>
+            </div>
+
+            <div style={{textAlign:"center", fontSize:9, marginTop:10, color:"#666"}}>
+              Thank you! Goods once sold not returnable<br/>Powered by SKYNET CYBER - DukaPulse v1 - KRA Module
+            </div>
+
             <button onClick={closeReceipt} style={{width:"100%", background:"black", color:"white", padding:12, borderRadius:8, fontWeight:800, border:"none", marginTop:12, cursor:"pointer"}}>DONE - NEW SALE</button>
+            <button onClick={()=>window.print()} style={{width:"100%", background:"white", color:"black", padding:8, borderRadius:8, fontWeight:700, border:"1px solid black", marginTop:6}}>Print Receipt</button>
           </div>
         </div>
       )}
 
-      <div className="no-print" style={{display:"grid", gridTemplateColumns:"2.2fr 1fr", gap:12}}>
+      <div style={{display:"grid", gridTemplateColumns:"2.2fr 1fr", gap:12}}>
         <div style={{background:"white", borderRadius:12, padding:10}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder={`Search ${items.length} items...`} style={{width:"100%", padding:12, borderRadius:8, border:"2px solid #e5e7eb", marginBottom:10}}/><div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, maxHeight:"75vh", overflowY:"auto"}}>
           {filtered.map(item=>(
             <div key={item.id} style={{display:"flex", justifyContent:"space-between", alignItems:"center", padding:10, border: item.stock < 10? "2px solid red" : "1px solid #eee", borderRadius:10, background: item.stock < 10? "#fef2f2" : "white"}}>
               <div style={{flex:1}}>
-                <div style={{fontWeight:700, fontSize:12}}>{item.name} {item.stock < 10 && "⚠️ LOW!"}</div>
+                <div style={{fontWeight:700, fontSize:12}}>{item.name} {item.stock < 10 && "LOW!"}</div>
                 <div style={{fontSize:10, color: item.stock < 10? "red" : "#666", fontWeight: item.stock < 10? 800 : 400}}>{item.category} • Stock {item.stock} • KES {item.sell}</div>
                 {isOwnerMode && (
                   <div style={{display:"flex", gap:4, marginTop:6}}>
@@ -611,11 +644,12 @@ export default function Page() {
           {cart.length===0 && <div style={{fontSize:12, color:"#888"}}>Cart empty</div>}
           <h2 style={{margin:"10px 0 4px 0"}}>Total: KES {totalSell.toLocaleString()}</h2>
           <div style={{fontSize:11, background:"#fef9c3", padding:6, borderRadius:6, marginBottom:8}}>Cart Profit: KES {totalProfit.toLocaleString()}</div>
+          <input value={customerName} onChange={e=>setCustomerName(e.target.value)} placeholder="Customer Name (optional)" style={{width:"100%", padding:10, borderRadius:8, border:"1px solid #ccc", marginBottom:6}}/>
           <input value={mpesaPhone} onChange={e=>setMpesaPhone(e.target.value)} placeholder="Customer M-Pesa 07xx (empty=CASH)" style={{width:"100%", padding:11, borderRadius:8, border:"2px solid black", margin:"8px 0"}}/>
           <button disabled={loading} onClick={handleSale} style={{width:"100%", background: loading?"#9ca3af":"#000", color:"white", border:"none", padding:14, borderRadius:10, fontWeight:900, cursor:"pointer"}}>{loading? status : "LIPA NA M-PESA / CASH"}</button>
           <button onClick={()=>setCart([])} style={{width:"100%", marginTop:6, background:"#f3f4f6", border:"none", padding:9, borderRadius:8, cursor:"pointer"}}>Clear Cart</button>
           <div style={{fontSize:10, color:"#888", marginTop:8, textAlign:"center"}}>
-            {isFirstPayment? `TRIAL: ${daysLeft()} days left - Pay 5000 via 714888/467108 after` : `Active till ${expiry} - Monthly 1500 via 714888/467108`}
+            KRA eTIMS Ready - VAT 16% Auto
           </div>
         </div>
       </div>
