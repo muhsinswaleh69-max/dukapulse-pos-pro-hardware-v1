@@ -161,7 +161,6 @@ export default function Page() {
     const savedType = localStorage.getItem(typeKey) as "hardware"|"supermarket"|null;
     const finalType = savedType || "hardware";
     setShopType(finalType);
-
     const stockKey = `dukapulse_${shopId}_${finalType}_stock_v11`;
     const salesKey = `dukapulse_${shopId}_${finalType}_sales_today_v11`;
     const profitKey = `dukapulse_${shopId}_${finalType}_profit_today_v11`;
@@ -285,9 +284,43 @@ export default function Page() {
   const monthProfit = monthData.reduce((s,[,v])=>s+v.profit,0) + profitToday;
   const daysWorked = monthData.length + (salesToday>0?1:0) || 1;
 
-  const handleSale = () => {
+  // --- FIXED: NOW CALLS MPESA API ---
+  const handleSale = async () => {
     if(cart.length===0) return alert("Cart empty!");
-    if(!confirm(`Sell KES ${totalSell} in ${shopType}?`)) return;
+    
+    let phone = mpesaPhone.trim();
+    if(phone.startsWith("0")) phone = "254" + phone.slice(1);
+    if(phone.startsWith("+")) phone = phone.slice(1);
+    const isMpesa = phone.length===12 && phone.startsWith("254");
+
+    if(isMpesa) {
+      if(!confirm(`Lipa KES ${totalSell} via M-PESA to ${phone}?`)) return;
+      try {
+        console.log("Sending STK to", phone, "Amount:", totalSell);
+        const res = await fetch("/api/mpesa", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ phone, amount: totalSell })
+        });
+        const data = await res.json();
+        console.log("MPESA RESPONSE:", data);
+        if(data.error || data.errorMessage) {
+          alert("M-PESA ERROR: " + JSON.stringify(data));
+          // Don't block sale, but show error
+        } else if(data.ResponseCode === "0") {
+          alert("✅ STK Push SENT to " + phone + "! Ask customer to enter PIN.");
+        } else {
+          alert("M-Pesa Response: " + JSON.stringify(data));
+        }
+      } catch(e:any) {
+        console.error(e);
+        alert("API /api/mpesa not found. Did you create app/api/mpesa/route.js? Error: " + e.message);
+        return;
+      }
+    } else {
+      if(!confirm(`Sell KES ${totalSell} as CASH in ${shopType}?`)) return;
+    }
+
     let newItems=[...items];
     cart.forEach(c=>{ newItems=newItems.map(it=> it.id===c.id? {...it, stock: it.stock - c.qty} : it); });
     saveStock(newItems);
@@ -301,9 +334,10 @@ export default function Page() {
     const id = "RCPT-"+Date.now().toString().slice(-6);
     const kraNo = genKRAInv(id);
     const qrValue = `${shopName.toUpperCase()}|TYPE:${shopType.toUpperCase()}|KRA PIN:P051234567Z|CU:${kraNo}|ID:${id}|TOTAL:KES ${totalSell}|VERIFY:https://etims.kra.go.ke/verify/${kraNo}`;
-    const rec={ id, kraNo, qrValue, date:new Date().toLocaleString(), cart, total:totalSell, phone: mpesaPhone || "Walk-in", customer: customerName || "Walk-in", method: mpesaPhone? "M-PESA" : "CASH", shopName, kraPin: "P051234567Z", shopType };
+    const rec={ id, kraNo, qrValue, date:new Date().toLocaleString(), cart, total:totalSell, phone: phone || mpesaPhone || "Walk-in", customer: customerName || "Walk-in", method: isMpesa? "M-PESA" : "CASH", shopName, kraPin: "P051234567Z", shopType };
     setReceipt(rec);
   };
+
   const closeReceipt=()=>{setReceipt(null); setCart([]); setMpesaPhone(""); setCustomerName("");};
 
   if(!shopId){
