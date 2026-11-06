@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server'
 
+// This holds the last payment so your POS can check it
+let lastTx: any = null
+
 export async function POST(req: Request) {
   try {
     const body = await req.json()
@@ -7,23 +10,24 @@ export async function POST(req: Request) {
 
     const callback = body?.Body?.stkCallback
     const resultCode = callback?.ResultCode
-    const metadata = callback?.CallbackMetadata?.Item || []
+    const items = callback?.CallbackMetadata?.Item || []
 
-    let lastTx = ""
+    let receipt = ""
     let amount = 0
     let phone = ""
 
-    for (const item of metadata) {
-      if (item.Name === "MpesaReceiptNumber") lastTx = item.Value
+    for (const item of items) {
+      if (item.Name === "MpesaReceiptNumber") receipt = item.Value
       if (item.Name === "Amount") amount = item.Value
       if (item.Name === "PhoneNumber") phone = item.Value
     }
 
     if (resultCode === 0) {
-      console.log("PAID:", lastTx, amount, phone)
-      // TODO: Here save to DB / mark sale as paid
+      lastTx = { receipt, amount, phone, status: "PAID", time: new Date().toISOString() }
+      console.log("PAID:", lastTx)
     } else {
-      console.log("NOT PAID:", callback?.ResultDesc)
+      lastTx = { status: "FAILED", desc: callback?.ResultDesc }
+      console.log("FAILED:", callback?.ResultDesc)
     }
 
     return NextResponse.json({ ResultCode: 0, ResultDesc: "OK" })
@@ -34,5 +38,5 @@ export async function POST(req: Request) {
 }
 
 export async function GET() {
-  return NextResponse.json({ ok: true, message: "Callback is live" })
+  return NextResponse.json(lastTx || { status: "WAITING" })
 }
