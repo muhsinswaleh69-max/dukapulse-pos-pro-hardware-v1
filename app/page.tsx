@@ -2,10 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 type Product = { id: number; name: string; price: number; cost: number; stock: number; category: string }
 type Sale = { id: string; total: number; profit: number; date: number; items: { name: string; qty: number; price: number }[]; customer: string; method: string; checkoutId: string }
-
-// ===== 72 HARDWARE ITEMS =====
 const DEFAULT_PRODUCTS: Product[] = [
-  // CEMENT & BUILDING
   { id: 1, name: 'Cement - Bamburi 50kg', price: 600, cost: 520, stock: 118, category: 'Cement' },
   { id: 2, name: 'Cement - Savannah 50kg', price: 570, cost: 500, stock: 80, category: 'Cement' },
   { id: 3, name: 'Cement - Simba 50kg', price: 590, cost: 510, stock: 90, category: 'Cement' },
@@ -16,7 +13,6 @@ const DEFAULT_PRODUCTS: Product[] = [
   { id: 8, name: 'Concrete Blocks - 6 Inch', price: 85, cost: 60, stock: 500, category: 'Cement' },
   { id: 9, name: 'Concrete Blocks - 9 Inch', price: 110, cost: 80, stock: 400, category: 'Cement' },
   { id: 10, name: 'Quarry Stones - Dressed', price: 45, cost: 30, stock: 1000, category: 'Cement' },
-  // TIMBER & WOOD
   { id: 11, name: 'Timber - 2x2 8ft', price: 350, cost: 260, stock: 120, category: 'Timber' },
   { id: 12, name: 'Timber - 2x3 10ft', price: 450, cost: 330, stock: 100, category: 'Timber' },
   { id: 13, name: 'Timber - 2x4 12ft', price: 550, cost: 400, stock: 80, category: 'Timber' },
@@ -27,7 +23,6 @@ const DEFAULT_PRODUCTS: Product[] = [
   { id: 18, name: 'Plywood - 12mm 8x4', price: 2800, cost: 2200, stock: 20, category: 'Timber' },
   { id: 19, name: 'MDF Board - 16mm 8x4', price: 3200, cost: 2500, stock: 15, category: 'Timber' },
   { id: 20, name: 'Ceiling Board - Chipboard', price: 450, cost: 340, stock: 60, category: 'Timber' },
-  // PAINT & FINISHING
   { id: 21, name: 'Paint - Crown 4L White', price: 1850, cost: 1400, stock: 45, category: 'Paint' },
   { id: 22, name: 'Paint - Crown 4L Cream', price: 1850, cost: 1400, stock: 30, category: 'Paint' },
   { id: 23, name: 'Paint - Crown 10L White', price: 4200, cost: 3300, stock: 20, category: 'Paint' },
@@ -40,7 +35,6 @@ const DEFAULT_PRODUCTS: Product[] = [
   { id: 30, name: 'Paint Brush - 3 Inch', price: 180, cost: 120, stock: 90, category: 'Paint' },
   { id: 31, name: 'Paint Brush - 4 Inch', price: 250, cost: 170, stock: 70, category: 'Paint' },
   { id: 32, name: 'Sand Paper - Pack', price: 150, cost: 90, stock: 120, category: 'Paint' },
-  // PLUMBING & WATER
   { id: 33, name: 'Plumbing - PVC Pipe 3m (1/2)', price: 450, cost: 320, stock: 60, category: 'Plumbing' },
   { id: 34, name: 'Plumbing - PVC Pipe 3m (3/4)', price: 550, cost: 400, stock: 50, category: 'Plumbing' },
   { id: 35, name: 'Plumbing - PVC Pipe 3m (1 Inch)', price: 700, cost: 520, stock: 40, category: 'Plumbing' },
@@ -54,7 +48,6 @@ const DEFAULT_PRODUCTS: Product[] = [
   { id: 43, name: 'Plumbing - Toilet Set Complete', price: 7500, cost: 5800, stock: 10, category: 'Plumbing' },
   { id: 44, name: 'Plumbing - Shower Head', price: 950, cost: 680, stock: 28, category: 'Plumbing' },
   { id: 45, name: 'Plumbing - Sink Mixer', price: 2200, cost: 1700, stock: 15, category: 'Plumbing' },
-  // ELECTRICAL
   { id: 46, name: 'Electrical - Cable 1.5mm Roll', price: 2200, cost: 1700, stock: 22, category: 'Electrical' },
   { id: 47, name: 'Electrical - Cable 2.5mm Roll', price: 2800, cost: 2100, stock: 20, category: 'Electrical' },
   { id: 48, name: 'Electrical - Cable 4mm Roll', price: 4500, cost: 3500, stock: 12, category: 'Electrical' },
@@ -67,7 +60,6 @@ const DEFAULT_PRODUCTS: Product[] = [
   { id: 55, name: 'Electrical - Extension 4 Way', price: 850, cost: 600, stock: 35, category: 'Electrical' },
   { id: 56, name: 'Electrical - Consumer Unit 4 Way', price: 3500, cost: 2700, stock: 10, category: 'Electrical' },
   { id: 57, name: 'Electrical - Conduit Pipe 20mm', price: 180, cost: 120, stock: 150, category: 'Electrical' },
-  // ROOFING & IRON
   { id: 58, name: 'Iron Sheet - Mabati 2.5m', price: 950, cost: 750, stock: 70, category: 'Hardware' },
   { id: 59, name: 'Iron Sheet - Mabati 3m', price: 1150, cost: 900, stock: 60, category: 'Hardware' },
   { id: 60, name: 'Iron Sheet - Versatile 3m', price: 1450, cost: 1150, stock: 40, category: 'Hardware' },
@@ -85,6 +77,12 @@ const DEFAULT_PRODUCTS: Product[] = [
   { id: 72, name: 'Wire Mesh - Chicken Wire Roll', price: 1850, cost: 1400, stock: 18, category: 'Hardware' },
 ]
 const CATEGORIES = ['All','Cement','Timber','Paint','Plumbing','Electrical','Hardware']
+async function safeJsonFetch(url: string, options?: any) {
+  const res = await fetch(url, options)
+  const text = await res.text()
+  if (!text) return {}
+  try { return JSON.parse(text) } catch { return { _raw: text, _status: res.status } }
+}
 export default function Home(){
   const [shopName,setShopName]=useState(''); const [shopLocation,setShopLocation]=useState(''); const [ownerPin,setOwnerPin]=useState('1234'); const [isSetup,setIsSetup]=useState(false)
   const [kraPin,setKraPin]=useState(''); const [etimsNo,setEtimsNo]=useState('')
@@ -110,13 +108,22 @@ export default function Home(){
   const startPolling = (id: string) => {
     if (pollRef.current) clearInterval(pollRef.current); let tries = 0
     pollRef.current = setInterval(async () => { tries++
-      try { const res = await fetch(`/api/mpesa/status?id=${id}`); const data = await res.json()
+      try {
+        const data: any = await safeJsonFetch(`/api/mpesa/status?id=${id}`)
         if (data.status === 'paid') { clearInterval(pollRef.current); const curCart = cartRef.current; const curTotal = curCart.reduce((a,i)=>a+i.customPrice*i.qty,0); const curProfit = curCart.reduce((a,i)=>a+(i.customPrice-i.product.cost)*i.qty,0); const finalReceipt='DP-'+Math.floor(100000+Math.random()*900000); const newSale:Sale={id:finalReceipt,total:curTotal,profit:curProfit,date:Date.now(),items:curCart.map(i=>({name:i.product.name,qty:i.qty,price:i.customPrice})),customer:customer||'Walk-in',method:'M-PESA',checkoutId:id}; const prevSales = JSON.parse(localStorage.getItem('dp_sales')||'[]'); const updatedSales = [newSale, ...prevSales]; localStorage.setItem('dp_sales', JSON.stringify(updatedSales)); setSales(updatedSales); const prevProducts: Product[] = JSON.parse(localStorage.getItem('dp_products')||JSON.stringify(DEFAULT_PRODUCTS)); const updatedProducts = prevProducts.map(p=>{const c=curCart.find(x=>x.product.id===p.id); return c?{...p,stock:p.stock-c.qty}:p}); localStorage.setItem('dp_products', JSON.stringify(updatedProducts)); setProducts(updatedProducts); setMpesaCode(data.mpesaCode||''); setPaidAmount(curTotal); setReceiptNo(finalReceipt); setPaymentStatus('paid')
         } else if (data.status === 'failed') { clearInterval(pollRef.current); setFailReason(data.resultDesc||'Payment cancelled'); setPaymentStatus('failed') }
-      } catch(e){} if (tries > 40) { clearInterval(pollRef.current); setFailReason('Timeout - No confirmation after 2 mins'); setPaymentStatus('failed') }
+      } catch(e){ console.log('poll error', e) } if (tries > 40) { clearInterval(pollRef.current); setFailReason('Timeout - No confirmation after 2 mins'); setPaymentStatus('failed') }
     }, 3000)
   }
-  const handleMpesa=async()=>{ if(cart.length===0) return alert('Cart is empty'); if(!phone) return alert('Enter customer phone'); if(!confirm(`Lipa KES ${total} via M-PESA to 254${phone.replace(/^0/,'')}?`)) return; setLoading(true); try{ const res=await fetch('/api/mpesa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,amount:total})}); const data=await res.json(); if(data.ResponseCode==='0'||data.ResponseCode===0){ setCheckoutId(data.CheckoutRequestID); setPaymentStatus('waiting'); startPolling(data.CheckoutRequestID) } else alert(data.errorMessage||'STK Failed') }catch(e:any){alert(e.message)} setLoading(false) }
+  const handleMpesa=async()=>{
+    if(cart.length===0) return alert('Cart is empty'); if(!phone) return alert('Enter customer phone'); if(!confirm(`Lipa KES ${total} via M-PESA to 254${phone.replace(/^0/,'')}?`)) return; setLoading(true)
+    try{
+      const data: any = await safeJsonFetch('/api/mpesa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,amount:total})})
+      console.log('MPESA DATA:', data)
+      if(data.ResponseCode==='0'||data.ResponseCode===0){ setCheckoutId(data.CheckoutRequestID); setPaymentStatus('waiting'); startPolling(data.CheckoutRequestID) }
+      else { alert(data.errorMessage || data.error || data.CustomerMessage || 'STK Failed - Check Vercel Logs. Details: ' + JSON.stringify(data).slice(0,200)) }
+    }catch(e:any){ alert('Error: ' + e.message) } setLoading(false)
+  }
   const handleCash=()=>{ if(cart.length===0) return alert('Cart empty'); const finalReceipt='DP-'+Math.floor(100000+Math.random()*900000); const newSale:Sale={id:finalReceipt,total,profit:totalProfit,date:Date.now(),items:cart.map(i=>({name:i.product.name,qty:i.qty,price:i.customPrice})),customer:customer||'Walk-in',method:'CASH',checkoutId:''}; saveSales([newSale,...sales]); saveProducts(products.map(p=>{const c=cart.find(x=>x.product.id===p.id); return c?{...p,stock:p.stock-c.qty}:p})); setPaidAmount(total); setReceiptNo(finalReceipt); setMpesaCode('CASH'); setPaymentStatus('paid') }
   const addProduct=()=>{ if(!newName||!newPrice) return alert('Enter name and price'); saveProducts([...products,{id:Date.now(),name:newName,price:Number(newPrice),cost:Number(newCost)||Number(newPrice)*0.8,stock:Number(newStock)||0,category:newCat}]); setShowAdd(false); setNewName(''); setNewPrice(''); setNewCost(''); setNewStock(''); alert('Product Added!')}
   const restock=(id:number)=>{const q=prompt('How many to add?'); if(!q) return; saveProducts(products.map(p=>p.id===id?{...p,stock:p.stock+Number(q)}:p))}
