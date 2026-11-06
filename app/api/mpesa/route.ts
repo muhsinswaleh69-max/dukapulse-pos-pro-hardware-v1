@@ -6,47 +6,49 @@ async function safeJson(res: Response) {
   try { return JSON.parse(text) } catch { return { _raw: text } }
 }
 
-export async function POST(req: Request) {
+export async function GET(req: Request) {
   try {
-    const { phone, amount } = await req.json()
+    const url = new URL(req.url)
+    const checkoutId = url.searchParams.get('id')
+    if (!checkoutId) return NextResponse.json({ status: 'waiting' })
     const isProd = process.env.MPESA_ENV === 'production'
     const base = isProd ? 'https://api.safaricom.co.ke' : 'https://sandbox.safaricom.co.ke'
     const auth = Buffer.from(`${process.env.MPESA_CONSUMER_KEY}:${process.env.MPESA_CONSUMER_SECRET}`).toString('base64')
     const tokenRes = await fetch(`${base}/oauth/v1/generate?grant_type=client_credentials`, { headers: { Authorization: `Basic ${auth}` } })
     const tokenData = await safeJson(tokenRes)
     const access_token = tokenData.access_token
-    if (!access_token) {
-      console.log('TOKEN FAILED:', tokenData)
-      return NextResponse.json({ error: 'Failed to get token - check CONSUMER_KEY / SECRET in Vercel', details: tokenData }, { status: 500 })
-    }
-    let formattedPhone = String(phone).replace(/^0/, '254').replace(/[^0-9]/g, '')
+    if (!access_token) return NextResponse.json({ status: 'waiting', error: 'No token' })
     const shortcode = process.env.MPESA_SHORTCODE!
     const passkey = process.env.MPESA_PASSKEY!
     const timestamp = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14)
     const password = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString('base64')
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dukapulse-pos-pro-hardware-v1-ba9e9k8r2-muhsin9.vercel.app'
-    const stkRes = await fetch(`${base}/mpesa/stkpush/v1/processrequest`, {
+    const queryRes = await fetch(`${base}/mpesa/stkpushquery/v1/query`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${access_token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        BusinessShortCode: shortcode,
-        Password: password,
-        Timestamp: timestamp,
-        TransactionType: 'CustomerPayBillOnline',
-        Amount: Number(amount),
-        PartyA: formattedPhone,
-        PartyB: shortcode,
-        PhoneNumber: formattedPhone,
-        CallBackURL: `${appUrl}/api/mpesa/callback`,
-        AccountReference: 'DukaPulse',
-        TransactionDesc: 'DukaPulse Hardware Payment'
-      })
+      body: JSON.stringify({ BusinessShortCode: shortcode, Password: password, Timestamp: timestamp, CheckoutRequestID: checkoutId })
     })
-    const data = await safeJson(stkRes)
-    console.log('STK RESPONSE:', data)
-    return NextResponse.json(data)
+    const data = await safeJson(queryRes)
+    console.log('QUERY:', data)
+    if (data.ResultCode === '0' || data.ResultCode === 0) {
+      let mpesaCode = 'Auto-confirmed'
+      let amount = 0
+      if (data.CallbackMetadata?.Item) {
+        for (const item of data.CallbackMetadata.Item) {
+          if (item.Name === 'MpesaReceiptNumber') mpesaCode = item.Value
+          if (item.Name === 'Amount') amount = item.Value
+        }
+      }
+      return NextResponse.json({ status: 'paid', mpesaCode, amount })
+    }
+    if (data.ResultCode === '1032' || data.ResultCode === '1037' || data.ResultCode === '2001') {
+      return NextResponse.json({ status: 'failed', resultDesc: data.ResultDesc || 'Payment failed / cancelled' })
+    }
+    const desc = String(data.ResultDesc || '').toLowerCase()
+    if (desc.includes('cancel') || desc.includes('timeout') || desc.includes('wrong') || desc.includes('invalid')) {
+      return NextResponse.json({ status: 'failed', resultDesc: data.ResultDesc })
+    }
+    return NextResponse.json({ status: 'waiting', raw: data })
   } catch (e: any) {
-    console.log('MPESA ERROR:', e.message)
-    return NextResponse.json({ error: e.message || 'STK Failed' }, { status: 500 })
+    return NextResponse.json({ status: 'waiting', error: e.message })
   }
 }
